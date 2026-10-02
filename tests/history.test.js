@@ -87,9 +87,8 @@ test('ambiguous usernames return choices instead of silently selecting a user',a
   assert.equal((await findProfiles(client,'Alpha',new AbortController().signal)).length,2);
 });
 
-test('timing excludes other workers and retains unverified transfer labels',()=>{
+test('timing excludes other workers, received transfers and resource orders of unknown ownership',()=>{
   assert.equal(deepDiveEventFor({...row(1),sellerId:'someone-else'},id,'wage'),null);
-  assert.equal(deepDiveEventFor({...row(1),buyerId:'someone-else'},id,'donation').timingKnown,false);
-  const resource=deepDiveEventFor({...row(1),buyerId:'another',offerCreatedAt:row(1).createdAt,itemCode:'iron'},id,'trading');
-  assert.equal(resource.timingKnown,false);assert.match(resource.timeMeaning,/unverified/);
+  assert.equal(deepDiveEventFor({...row(1),buyerId:'someone-else'},id,'donation'),null);
+  assert.equal(deepDiveEventFor({...row(1),buyerId:'another',offerCreatedAt:row(1).createdAt,itemCode:'iron'},id,'trading'),null);
 });

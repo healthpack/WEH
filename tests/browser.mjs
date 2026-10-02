@@ -33,6 +33,21 @@ await context.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,as
   if(input.limit===1)return reply({items:[wage(0,id)]});
   assert.equal(endpoint,'transaction.getPaginatedTransactions');calls++;
   if(mode==='slow'&&!input.cursor)await new Promise(resolve=>setTimeout(resolve,500));
+  const sentTime=new Date(Date.UTC(2025,0,24,18)).toISOString(),saleTime=new Date(Date.UTC(2025,1,28)).toISOString();
+  if(input.transactionType==='articleTip')return reply({items:[
+    {_id:'sent-tip',buyerId:input.userId,sellerId:'other',createdAt:sentTime},
+    ...Array.from({length:20},(_,i)=>({_id:'received-tip-'+i,buyerId:'other',sellerId:input.userId,createdAt:saleTime})),
+  ]});
+  if(input.transactionType==='itemMarket')return reply({items:[
+    {_id:'own-listing',sellerId:input.userId,buyerId:'other',item:{_id:'equipment-one'},offerCreatedAt:sentTime,createdAt:saleTime},
+    {_id:'own-listing-repeat',sellerId:input.userId,buyerId:'another',item:{_id:'equipment-one'},offerCreatedAt:sentTime,createdAt:saleTime},
+    {_id:'purchase',sellerId:'other',buyerId:input.userId,offerCreatedAt:saleTime,createdAt:saleTime},
+    {_id:'unknown-listing-time',sellerId:input.userId,buyerId:'other',createdAt:saleTime},
+  ]});
+  if(input.transactionType==='trading')return reply({items:[
+    {_id:'resource-sell',sellerId:input.userId,buyerId:'other',offerCreatedAt:saleTime,createdAt:saleTime},
+    {_id:'resource-buy',sellerId:'other',buyerId:input.userId,offerCreatedAt:saleTime,createdAt:saleTime},
+  ]});
   if(input.transactionType==='craftItem')return reply({items:Array.from({length:10},(_,i)=>({...wage(i,input.userId),_id:'craft-'+i,createdAt:new Date(Date.UTC(2025,0,24,12)+i*60000).toISOString()}))});
   if(input.transactionType!=='wage')return reply({items:[]});
   const cursor=Number(input.cursor||0);
@@ -77,7 +92,7 @@ try{
   await page.getByRole('button',{name:/Second explorer/}).waitFor();
   mode='complete';await page.getByRole('button',{name:/Second explorer/}).click();
   await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
-  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5510');
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5512');
   assert.match(await page.locator('.account-name').innerText(),/Second explorer/);
   assert.equal(await page.getByRole('button',{name:'Stop',exact:true}).isDisabled(),true);
   assert.equal(await page.getByTestId('graph-loading').count(),0);
@@ -87,7 +102,9 @@ try{
   assert.equal(await page.getByText('ONE ACCOUNT. ALL AVAILABLE HISTORY.',{exact:true}).count(),0);
   assert.match(await page.getByRole('heading',{level:1}).innerText(),/^View the actions of a War Era account over time\.$/);
   assert.equal(page.url(),baseURL+otherId);
-  assert.match(await page.getByRole('button',{name:'Equipment market',exact:true}).getAttribute('title'),/sellers use listing time and buyers use purchase time/);
+  assert.match(await page.getByRole('button',{name:'Equipment market',exact:true}).getAttribute('title'),/Only this account’s equipment listings.*Purchases and sale completion times are excluded/);
+  assert.match(await page.getByRole('button',{name:'Article tips',exact:true}).getAttribute('title'),/Received tips are excluded from all charts/);
+  assert.match(await page.getByRole('button',{name:'Resource offers',exact:true}).getAttribute('title'),/Excluded from all charts/);
   assert.match(await page.getByRole('button',{name:'Battle cases',exact:true}).getAttribute('title'),/case drops on attack only/);
   assert.doesNotMatch(await page.locator('.chart-content').innerText(),/Equipment sellers use listing time/);
   const canvas=page.getByRole('img',{name:'Activity fingerprint by date and hour in UTC'});
@@ -121,6 +138,11 @@ try{
       assert.ok(await page.locator('[data-deep-view=density] rect[data-event-type=wage]').count()>0);
       assert.ok(await page.locator('[data-deep-view=density] rect[data-event-type=craftItem]').count()>0);
       assert.match(await page.locator('[data-deep-view=density] rect[data-event-type=wage] title').first().textContent(),/2024-12-31 · 19:00 America\/New_York/);
+      assert.equal(await page.locator('[data-deep-view=density] rect[data-event-type=articleTip]').count(),1);
+      assert.equal(await page.locator('[data-deep-view=density] rect[data-event-type=itemMarket]').count(),1);
+      assert.equal(await page.locator('[data-deep-view=density] rect[data-event-type=trading]').count(),0);
+      assert.match(await page.locator('[data-deep-view=density] rect[data-event-type=articleTip] title').textContent(),/2025-01-24 · 13:00.*1 Article tips events/);
+      assert.match(await page.locator('[data-deep-view=density] rect[data-event-type=itemMarket] title').textContent(),/2025-01-24 · 13:00.*1 Equipment market events/);
     }
     if(name==='Daily trends')assert.equal(await page.locator('[data-deep-view=trends] g[data-event-type]').count(),TYPES.length);
     await page.screenshot({path:new URL(`03-${name.replaceAll(' ','-').toLowerCase()}.png`,output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
@@ -139,7 +161,7 @@ try{
   await page.getByRole('button',{name:'Validate & continue'}).click();
   await page.getByRole('alert').waitFor();
   await page.getByRole('button',{name:'Keep previous key & go back',exact:true}).click();
-  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5510');
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5512');
   await page.getByRole('button',{name:'Change API key',exact:true}).click();
   assert.equal(await page.getByLabel('WarEra API key').inputValue(),'fixture-key');
   await page.getByRole('button',{name:'Validate & continue'}).click();
@@ -153,7 +175,7 @@ try{
   await page.reload();
   await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
   assert.ok(validations>priorValidations);assert.match(await page.locator('.account-name').innerText(),/Second explorer/);
-  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5510');
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5512');
   assert.equal(await page.getByRole('dialog').count(),0);
 
   // Opening the site again in another tab of this browser also restores the key.
@@ -193,5 +215,5 @@ try{
   assert.equal(await page.evaluate(name=>localStorage.getItem(name),KEY_STORAGE_NAME),'fixture-key');
   // Expected network errors: mocked invalid keys, blocked fonts, Pages' route shell.
   assert.deepEqual(errors.filter(e=>!e.includes('401')&&!e.includes('404')&&!e.includes('net::ERR_FAILED')),[]);
-  console.log('Browser checks passed: copy, partial charts without hatching, loading, Stop, 5,510 events, colors, Shift-click, timezone, mobile, key retention/persistence/revalidation, direct account links, refresh, reopening, Back/Forward and expired-key recovery.');
+  console.log('Browser checks passed: 5,512 own events, received-tip/purchase/resource exclusions, equipment listing-time attribution and deduplication, colors, timezone, Stop, mobile, saved keys and account links.');
 }finally{await browser.close();}
