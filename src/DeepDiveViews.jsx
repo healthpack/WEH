@@ -34,7 +34,7 @@ function AccountLabel({s,detail}) {
 
 export function DensityView({series,span,types,timeZone='UTC',colorMode='monochrome'}) {
   const [ref,width]=useWidth();
-  const summaries=useMemo(()=>series.map(s=>dailySummary(s,span,types.filter(t=>t!=='trading'),true,timeZone)),[series,span,types,timeZone]);
+  const summaries=useMemo(()=>series.map(s=>dailySummary(s,span,types,true,timeZone)),[series,span,types,timeZone]);
   const daysPerCell=Math.max(1,Math.ceil((summaries[0]?.length||0)/Math.max(1,Math.floor((width-68)/6))));
   const rows=summaries.map(days=>{
     const bins=[];

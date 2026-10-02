@@ -18,6 +18,7 @@ context.on('page',page=>{
 const page=await context.newPage();
 const baseURL=process.env.WEH_TEST_URL||'http://127.0.0.1:5180/';
 let mode='slow',calls=0,validations=0;
+const historyTypes=new Set();
 const id=EXAMPLE_PROFILE.split('/').at(-1),otherId='69a46f7413e0dcf990d09341';
 const wage=(i,userId)=>({_id:`${userId}-${i}`,sellerId:userId,createdAt:new Date(Date.UTC(2025,0,1)+i*360000).toISOString()});
 await context.route('https://fonts.googleapis.com/**',route=>route.abort());
@@ -32,6 +33,7 @@ await context.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,as
   if(endpoint==='search.searchAnything')return reply({userIds:[id,otherId]});
   if(input.limit===1)return reply({items:[wage(0,id)]});
   assert.equal(endpoint,'transaction.getPaginatedTransactions');calls++;
+  assert.ok(TYPES.includes(input.transactionType));historyTypes.add(input.transactionType);
   if(mode==='slow'&&!input.cursor)await new Promise(resolve=>setTimeout(resolve,500));
   const sentTime=new Date(Date.UTC(2025,0,24,18)).toISOString(),saleTime=new Date(Date.UTC(2025,1,28)).toISOString();
   if(input.transactionType==='articleTip')return reply({items:[
@@ -43,15 +45,6 @@ await context.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,as
     {_id:'own-listing-repeat',sellerId:input.userId,buyerId:'another',item:{_id:'equipment-one'},offerCreatedAt:sentTime,createdAt:saleTime},
     {_id:'purchase',sellerId:'other',buyerId:input.userId,offerCreatedAt:saleTime,createdAt:saleTime},
     {_id:'unknown-listing-time',sellerId:input.userId,buyerId:'other',createdAt:saleTime},
-  ]});
-  if(input.transactionType==='trading')return reply({items:[
-    {_id:'resource-sell',sellerId:input.userId,buyerId:'other',offerCreatedAt:saleTime,createdAt:saleTime},
-    {_id:'resource-buy',sellerId:'other',buyerId:input.userId,offerCreatedAt:saleTime,createdAt:saleTime},
-  ]});
-  if(input.transactionType==='battleLoot')return reply({items:[
-    {_id:'equipment-award',buyerId:input.userId,itemCode:'chest3',createdAt:saleTime},
-    {_id:'foreign-case',buyerId:'other',itemCode:'case1',createdAt:saleTime},
-    ...(input.userId===otherId?[{_id:'wooden-drop',buyerId:input.userId,itemCode:'woodenCase',createdAt:new Date(Date.UTC(2025,0,24,16)).toISOString()}]:[]),
   ]});
   if(input.transactionType==='craftItem')return reply({items:Array.from({length:10},(_,i)=>({...wage(i,input.userId),_id:'craft-'+i,createdAt:new Date(Date.UTC(2025,0,24,12)+i*60000).toISOString()}))});
   if(input.transactionType!=='wage')return reply({items:[]});
@@ -97,7 +90,7 @@ try{
   await page.getByRole('button',{name:/Second explorer/}).waitFor();
   mode='complete';await page.getByRole('button',{name:/Second explorer/}).click();
   await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
-  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5513');
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5512');
   assert.match(await page.locator('.account-name').innerText(),/Second explorer/);
   assert.equal(await page.getByRole('button',{name:'Stop',exact:true}).isDisabled(),true);
   assert.equal(await page.getByTestId('graph-loading').count(),0);
@@ -109,15 +102,11 @@ try{
   assert.equal(page.url(),baseURL+otherId);
   assert.match(await page.getByRole('button',{name:'Equipment market',exact:true}).getAttribute('title'),/Only this account’s equipment listings.*Purchases and sale completion times are excluded/);
   assert.match(await page.getByRole('button',{name:'Article tips',exact:true}).getAttribute('title'),/Received tips are excluded from all charts/);
-  assert.match(await page.getByRole('button',{name:'Resource offers',exact:true}).getAttribute('title'),/Excluded from all charts/);
-  assert.match(await page.getByRole('button',{name:'Battle cases',exact:true}).getAttribute('title'),/Equipment awards are excluded.*not individual drop times/);
-  await page.getByRole('button',{name:'Resource offers',exact:true}).click({modifiers:['Shift']});
-  for(const name of ['Fingerprint','Heatmap','Daily trends']) {
-    await page.getByRole('tab',{name,exact:true}).click();
-    assert.match(await page.locator('.chart-content').innerText(),/Resource listing history is unavailable.*Historical trades do not identify/s);
-  }
-  await page.screenshot({path:new URL('06-resource-history.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
-  await page.getByRole('button',{name:'All actions',exact:true}).click();
+  assert.equal(await page.getByRole('button',{name:'Resource offers',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Battle cases',exact:true}).count(),0);
+  assert.equal(await page.locator('.receipts > div').count(),7);
+  assert.equal(await page.getByRole('progressbar',{name:'Completed action types'}).count(),0);
+  assert.deepEqual([...historyTypes].sort(),[...TYPES].sort());
   await page.getByRole('tab',{name:'Fingerprint',exact:true}).click();
   assert.doesNotMatch(await page.locator('.chart-content').innerText(),/Equipment sellers use listing time/);
   const canvas=page.getByRole('img',{name:'Activity fingerprint by date and hour in UTC'});
@@ -154,8 +143,7 @@ try{
       assert.equal(await page.locator('[data-deep-view=density] rect[data-event-type=articleTip]').count(),1);
       assert.equal(await page.locator('[data-deep-view=density] rect[data-event-type=itemMarket]').count(),1);
       assert.equal(await page.locator('[data-deep-view=density] rect[data-event-type=trading]').count(),0);
-      assert.equal(await page.locator('[data-deep-view=density] rect[data-event-type=battleLoot]').count(),1);
-      assert.match(await page.locator('[data-deep-view=density] rect[data-event-type=battleLoot] title').textContent(),/2025-01-24 · 11:00.*1 Battle cases events/);
+      assert.equal(await page.locator('[data-deep-view=density] rect[data-event-type=battleLoot]').count(),0);
       assert.match(await page.locator('[data-deep-view=density] rect[data-event-type=articleTip] title').textContent(),/2025-01-24 · 13:00.*1 Article tips events/);
       assert.match(await page.locator('[data-deep-view=density] rect[data-event-type=itemMarket] title').textContent(),/2025-01-24 · 13:00.*1 Equipment market events/);
     }
@@ -176,7 +164,7 @@ try{
   await page.getByRole('button',{name:'Validate & continue'}).click();
   await page.getByRole('alert').waitFor();
   await page.getByRole('button',{name:'Keep previous key & go back',exact:true}).click();
-  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5513');
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5512');
   await page.getByRole('button',{name:'Change API key',exact:true}).click();
   assert.equal(await page.getByLabel('WarEra API key').inputValue(),'fixture-key');
   await page.getByRole('button',{name:'Validate & continue'}).click();
@@ -190,7 +178,7 @@ try{
   await page.reload();
   await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
   assert.ok(validations>priorValidations);assert.match(await page.locator('.account-name').innerText(),/Second explorer/);
-  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5513');
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5512');
   assert.equal(await page.getByRole('dialog').count(),0);
 
   // Opening the site again in another tab of this browser also restores the key.
@@ -216,15 +204,6 @@ try{
   await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
   assert.match(await page.locator('.account-name').innerText(),/Example explorer/);
   assert.equal(await page.getByRole('dialog').count(),0);
-  await page.getByRole('button',{name:'Battle cases',exact:true}).click({modifiers:['Shift']});
-  for(const name of ['Fingerprint','Heatmap','Daily trends']) {
-    await page.getByRole('tab',{name,exact:true}).click();
-    assert.match(await page.locator('.chart-content').innerText(),/No case-drop timestamps available.*Battle equipment awards are excluded/s);
-  }
-  await page.setViewportSize({width:1440,height:1050});
-  await page.evaluate(()=>window.scrollTo(0,0));
-  await page.screenshot({path:new URL('07-battle-cases.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
-  await page.getByRole('button',{name:'All actions',exact:true}).click();
 
   // An expired saved key blocks the queued scan and can be replaced in place.
   await page.evaluate(name=>localStorage.setItem(name,'invalid'),KEY_STORAGE_NAME);
@@ -239,5 +218,5 @@ try{
   assert.equal(await page.evaluate(name=>localStorage.getItem(name),KEY_STORAGE_NAME),'fixture-key');
   // Expected network errors: mocked invalid keys, blocked fonts, Pages' route shell.
   assert.deepEqual(errors.filter(e=>!e.includes('401')&&!e.includes('404')&&!e.includes('net::ERR_FAILED')),[]);
-  console.log('Browser checks passed: 5,513 own events including a wooden battle case; equipment award/foreign case exclusions, source-specific empty feedback in all three tabs, attribution, colors, timezone, Stop, mobile, saved keys and account links.');
+  console.log('Browser checks passed: 5,512 own events; unsupported controls and history requests removed, attribution, all three graphs, colors, timezone, Stop, mobile, saved keys and account links.');
 }finally{await browser.close();}

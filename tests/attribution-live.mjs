@@ -6,7 +6,7 @@ const key=process.env.WARERA_API_KEY;
 if(!key)throw Error('Set WARERA_API_KEY for the optional attribution check.');
 const userId=profileId(EXAMPLE_PROFILE),client=createClient(()=>key),signal=AbortSignal.timeout(45000);
 await client.validateKey(signal);
-for(const type of ['articleTip','itemMarket','trading']) {
+for(const type of ['articleTip','itemMarket']) {
   for(const forceOfficial of [false,true]) {
     const page=await client.request('transaction.getPaginatedTransactions',{userId,transactionType:type,limit:20},{signal,forceOfficial});
     const rows=transactionRows(page),events=rows.map(row=>deepDiveEventFor(row,userId,type)).filter(Boolean);
@@ -16,9 +16,8 @@ for(const type of ['articleTip','itemMarket','trading']) {
       const event=deepDiveEventFor(row,userId,type);
       if(type==='articleTip'&&event){assert.equal(userIdOf(row.buyerId),userId);assert.equal(event.t,Date.parse(row.createdAt));}
       if(type==='itemMarket'&&event){assert.equal(userIdOf(row.sellerId),userId);assert.equal(event.t,Date.parse(row.offerCreatedAt));}
-      if(type==='trading')assert.equal(event,null);
     }
     console.log(`${forceOfficial?'Official':'Gateway-first'} ${type}: ${rows.length} rows, ${events.length} own actions, ${rows.length-events.length} excluded.`);
   }
 }
-console.log('Live attribution passed: outgoing tips only, seller equipment at listing time only, unowned resource-order times excluded.');
+console.log('Live attribution passed: outgoing tips only, seller equipment at listing time only.');

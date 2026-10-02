@@ -17,10 +17,10 @@ class ChartBoundary extends React.Component {
   render() { return this.state.error ? <div role="alert" className="empty-chart">This chart could not render. Choose another tab to continue exploring.</div> : this.props.children; }
 }
 
-function EmptyChart({loading=false, account=false, title, detail}) {
-  return <div className="empty-chart-grid" aria-label={title || 'No account loaded'}>
+function EmptyChart({loading=false, account=false}) {
+  return <div className="empty-chart-grid" aria-label="No account loaded">
     <div className="empty-hours">24:00<br/>18:00<br/>12:00<br/>06:00<br/>00:00</div>
-    <div className="empty-chart">{loading?<span className="graph-spinner"/>:<span className="mini-mark">▥</span>}<strong>{title || (loading?'Loading account history…':account?'No observed events yet.':'Your account’s story, in time.')}</strong><span>{detail || (loading?'Waiting for the first pages. The graph will populate as data arrives.':account?'No events were returned for this account.':'Choose a user to start exploring their activity.')}</span></div>
+    <div className="empty-chart">{loading?<span className="graph-spinner"/>:<span className="mini-mark">▥</span>}<strong>{loading?'Loading account history…':account?'No observed events yet.':'Your account’s story, in time.'}</strong><span>{loading?'Waiting for the first pages. The graph will populate as data arrives.':account?'No events were returned for this account.':'Choose a user to start exploring their activity.'}</span></div>
   </div>;
 }
 
@@ -139,14 +139,6 @@ export default function App() {
   const status={idle:'Ready to explore',collecting:'Collecting history',complete:'History complete',partial:'Partial history',stopped:'Collection stopped'}[phase];
   const toggleType = (type, event) => setTypes(prev=>event.shiftKey?[type]:prev.includes(type)?prev.filter(t=>t!==type):TYPES.filter(t=>prev.includes(t)||t===type));
   const closeSearch = () => {abort();setGate(null);setError('');};
-  const soloType=types.length===1?types[0]:null;
-  const emptyExplanation=account&&soloType==='trading'?{
-    title:'Resource listing history is unavailable',
-    detail:'Historical trades do not identify who placed the offer. Only currently open orders identify owners, so this account’s past listings cannot be reconstructed. Purchase and fill times are excluded.',
-  }:account&&soloType==='battleLoot'&&account.counts.battleLoot?.pages&&!allSeries[0]?.evts.length?{
-    title:'No case-drop timestamps available',
-    detail:'No timestamped case drops were returned for this account. Battle equipment awards are excluded, and battle summaries provide case totals without a timestamp for each drop.',
-  }:null;
 
   return <div className="app">
     <header className="topbar"><a className="brand" href={import.meta.env.BASE_URL}><img src={`${import.meta.env.BASE_URL}mark.svg`} alt=""/><strong>WAR ERA HISTORY</strong></a>{gate!=='key'&&<button className="quiet" onClick={changeKey}><Icon name="key"/>Change API key</button>}</header>
@@ -159,10 +151,10 @@ export default function App() {
         <div className="display-options"><div className="color-mode" role="group" aria-label="Graph colors"><button aria-pressed={colorMode==='monochrome'} onClick={()=>setColorMode('monochrome')}>Monochrome</button><button aria-pressed={colorMode==='color'} onClick={()=>setColorMode('color')}><span className="color-symbol"/>Color by type</button></div><span>Shift-click an action to show only that type</span></div>
         <div className="chart-content" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} aria-busy={phase==='collecting'}>
           {phase==='collecting'&&<div className="graph-loading" role="status" data-testid="graph-loading"><span className="graph-spinner"/><div><strong>Loading history…</strong><span>{pages?`${pages.toLocaleString()} pages received · ${count.toLocaleString()} events plotted`:'Waiting for the first transaction pages…'}</span></div><progress max={TYPES.length} value={finished} aria-label="Completed action types"/></div>}
-          <ChartBoundary key={`${account?.id||'empty'}/${tab}/${timeZone}`}>{emptyExplanation?<EmptyChart account {...emptyExplanation}/>:!account||!span?<EmptyChart loading={phase==='collecting'} account={!!account}/>:tab==='fingerprint'?<Fingerprint series={allSeries} span={span} timeZone={timeZone} colorMode={colorMode}/>:tab==='heatmap'?<DensityView series={allSeries} span={span} types={types} timeZone={timeZone} colorMode={colorMode}/>:<TrendsView series={allSeries} span={span} types={types} timeZone={timeZone} colorMode={colorMode}/>}</ChartBoundary>
+          <ChartBoundary key={`${account?.id||'empty'}/${tab}/${timeZone}`}>{!account||!span?<EmptyChart loading={phase==='collecting'} account={!!account}/>:tab==='fingerprint'?<Fingerprint series={allSeries} span={span} timeZone={timeZone} colorMode={colorMode}/>:tab==='heatmap'?<DensityView series={allSeries} span={span} types={types} timeZone={timeZone} colorMode={colorMode}/>:<TrendsView series={allSeries} span={span} types={types} timeZone={timeZone} colorMode={colorMode}/>}</ChartBoundary>
         </div>
         <div className="collection-bar"><span className={`collection-dot ${phase==='collecting'?'pulse':''}`}/><span>{phase==='collecting'?`${finished} of ${TYPES.length} action types complete · charts update as pages arrive`:status}</span><span className="queue-info">{queue.active} active · {queue.queued} queued</span></div>
-        {account&&<details className="acquisition"><summary>Acquisition details{failed.length>0?` · ${failed.length} failed type(s)`:''}</summary><div className="receipts">{TYPES.map(type=><div key={type}><span>{LABELS[type]}</span><span>{(account.counts[type]?.actions||0).toLocaleString()} events · {(account.counts[type]?.rows||0).toLocaleString()} rows · {account.counts[type]?.pages||0} pages</span><span className={account.coverage[type]?.complete?'verified':'unverified'}>{account.coverage[type]?.complete?(type==='trading'?'Listing ownership unavailable':type==='battleLoot'&&!account.counts[type]?.actions?'No timestamped case drops':'Complete'):account.coverage[type]?.error||(['stopped','partial'].includes(phase)?'Incomplete':account.coverage[type]?.reason||'Queued')}</span></div>)}</div></details>}
+        {account&&<details className="acquisition"><summary>Acquisition details{failed.length>0?` · ${failed.length} failed type(s)`:''}</summary><div className="receipts">{TYPES.map(type=><div key={type}><span>{LABELS[type]}</span><span>{(account.counts[type]?.actions||0).toLocaleString()} events · {(account.counts[type]?.rows||0).toLocaleString()} rows · {account.counts[type]?.pages||0} pages</span><span className={account.coverage[type]?.complete?'verified':'unverified'}>{account.coverage[type]?.complete?'Complete':account.coverage[type]?.error||(['stopped','partial'].includes(phase)?'Incomplete':account.coverage[type]?.reason||'Queued')}</span></div>)}</div></details>}
         {notice&&<p className="notice" role="status">{notice}</p>}
         {storageNotice&&<p className="notice" role="status">{storageNotice}</p>}
       </section>

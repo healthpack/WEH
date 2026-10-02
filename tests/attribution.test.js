@@ -1,24 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {actionTimeFor,caseLoot,deepDiveEventFor} from '../src/analysisCore.js';
+import {actionTimeFor,deepDiveEventFor} from '../src/analysisCore.js';
 import {collectDive} from '../src/warera.js';
 import {dailySummary,DAY} from '../src/deepDiveAnalysis.js';
 
 const id='69a46f7413e0dcf990d09340',other='69a46f7413e0dcf990d09341';
 const listing=Date.UTC(2025,0,1,9),payment=Date.UTC(2025,0,7,20);
 const base={sellerId:id,buyerId:other,offerCreatedAt:new Date(listing).toISOString(),createdAt:new Date(payment).toISOString()};
-
-test('battle cases recognize current case codes, omit equipment awards and require the selected recipient',()=>{
-  for(const itemCode of ['case1','case2','woodenCase']) {
-    const row={_id:'drop',buyerId:id,itemCode,createdAt:new Date(listing).toISOString()};
-    assert.equal(caseLoot(row),true);
-    assert.equal(deepDiveEventFor(row,id,'battleLoot').t,listing);
-    assert.equal(deepDiveEventFor({...row,buyerId:other},id,'battleLoot'),null);
-    assert.equal(deepDiveEventFor({...row,buyerId:{_id:id}},id,'battleLoot').t,listing);
-    assert.equal(deepDiveEventFor({...row,createdAt:'invalid'},id,'battleLoot'),null);
-  }
-  for(const itemCode of ['chest1','chest3','pants2','gloves5','sniper','caseUnknown',undefined])assert.equal(deepDiveEventFor({buyerId:id,itemCode,createdAt:base.createdAt},id,'battleLoot'),null);
-});
 
 test('tips and donations represent the selected sender only, including nested identities',()=>{
   for(const type of ['articleTip','donation']) {
@@ -43,10 +31,15 @@ test('equipment represents only the selected seller at listing time, without a s
   assert.notEqual(deepDiveEventFor({...base,_id:'one',item:'helmet'},id,'itemMarket').dedupKey,deepDiveEventFor({...base,_id:'two',item:'helmet'},id,'itemMarket').dedupKey);
 });
 
-test('a resource seller or buyer cannot establish who placed the resting offer',()=>{
+test('unsupported resource offers and battle awards cannot become account events',()=>{
   for(const row of [base,{...base,buyerId:id,sellerId:other},{...base,sellerId:{_id:id},buyerId:{_id:other}}]) {
     assert.equal(deepDiveEventFor({...row,itemCode:'iron'},id,'trading'),null);
     assert.equal(actionTimeFor(row,id,'trading'),null);
+  }
+  for(const itemCode of ['case1','case2','woodenCase','chest3']) {
+    const row={buyerId:id,itemCode,createdAt:base.createdAt};
+    assert.equal(deepDiveEventFor(row,id,'battleLoot'),null);
+    assert.equal(actionTimeFor(row,id,'battleLoot'),null);
   }
 });
 
@@ -61,14 +54,18 @@ test('mixed history counts and all chart summaries contain outgoing tips and own
       {...base,_id:'missing-time',offerCreatedAt:null},
     ],
     trading:[{...base,_id:'resource-sell'}, {...base,_id:'resource-buy',buyerId:id,sellerId:other}],
+    battleLoot:[{_id:'award',buyerId:id,itemCode:'case1',createdAt:base.createdAt}],
   };
   const types=Object.keys(histories);
-  const client={request:async(_endpoint,input)=>({items:histories[input.transactionType]})};
+  const requested=[];
+  const client={request:async(_endpoint,input)=>{requested.push(input.transactionType);return {items:histories[input.transactionType]};}};
   const result=await collectDive(client,{id,name:'Selected user'},new AbortController().signal,()=>{},{types});
+  assert.deepEqual(requested.sort(),['articleTip','itemMarket']);
   assert.equal(result.times.length,3);
-  assert.deepEqual(Object.fromEntries(types.map(t=>[t,result.counts[t].actions])),{articleTip:1,itemMarket:2,trading:0});
+  assert.deepEqual(Object.fromEntries(Object.entries(result.counts).map(([t,c])=>[t,c.actions])),{articleTip:1,itemMarket:2});
   assert.equal(result.counts.itemMarket.rows,5);
-  assert.ok(types.every(type=>result.coverage[type].complete));
+  assert.deepEqual(Object.keys(result.coverage),['articleTip','itemMarket']);
+  assert.ok(Object.values(result.coverage).every(c=>c.complete));
   const series={...result,evts:result.times},span={lo:listing-9*3600000,hi:payment+4*3600000-1};
   for(const timingOnly of [false,true]) {
     const days=dailySummary(series,span,types,timingOnly);

@@ -5,19 +5,17 @@ import { readHistory } from './transactionHistory.js';
 import { deepDiveEventFor } from './analysisCore.js';
 
 export const EXAMPLE_PROFILE = 'https://app.warera.io/user/69a46f7413e0dcf990d09340';
-export const TYPES = ['itemMarket', 'trading', 'donation', 'articleTip', 'wage', 'openCase', 'craftItem', 'dismantleItem', 'battleLoot'];
-export const LABELS = { itemMarket:'Equipment market', trading:'Resource offers', donation:'Donations', articleTip:'Article tips', wage:'Work', openCase:'Open cases', craftItem:'Crafting', dismantleItem:'Dismantling', battleLoot:'Battle cases' };
-export const TYPE_COLORS = { itemMarket:'#4fc3e8', wage:'#3fd0a3', donation:'#ff5d6c', articleTip:'#a98bff', openCase:'#ffab3d', craftItem:'#ffd84d', dismantleItem:'#ff7ab8', trading:'#79c0ff', battleLoot:'#f78166' };
+export const TYPES = ['itemMarket', 'donation', 'articleTip', 'wage', 'openCase', 'craftItem', 'dismantleItem'];
+export const LABELS = { itemMarket:'Equipment market', donation:'Donations', articleTip:'Article tips', wage:'Work', openCase:'Open cases', craftItem:'Crafting', dismantleItem:'Dismantling' };
+export const TYPE_COLORS = { itemMarket:'#4fc3e8', wage:'#3fd0a3', donation:'#ff5d6c', articleTip:'#a98bff', openCase:'#ffab3d', craftItem:'#ffd84d', dismantleItem:'#ff7ab8' };
 export const TYPE_HINTS = {
   itemMarket:'Only this account’s equipment listings, using listing time. Purchases and sale completion times are excluded. Transaction history reveals listings that resulted in a recorded sale.',
-  trading:'Resource transactions do not identify who placed the offer. Excluded from all charts. Owners are available only for currently open orders, not historical filled offers.',
   donation:'Only donations sent by this account, using transaction time. Received transfers are excluded from all charts.',
   articleTip:'Only article tips sent by this account, using payment time. Received tips are excluded from all charts.',
   wage:'Own work only; payments made to other workers are excluded.',
   openCase:'Cases opened by the account, using the recorded transaction time.',
   craftItem:'Crafting events, using the recorded transaction time.',
   dismantleItem:'Dismantling events, using the recorded transaction time.',
-  battleLoot:'Only timestamped case drops belonging to this account. Equipment awards are excluded. Battle summaries provide case totals, not individual drop times.',
 };
 
 export function profileId(input) {
@@ -99,6 +97,7 @@ export async function findProfiles(client, input, signal) {
 }
 
 export async function collectDive(client, user, signal, onUpdate, {types=TYPES, now=Date.now()}={}) {
+  types=types.filter(type=>TYPES.includes(type));
   const times = [], seen = new Set(), coverage = {}, counts = {};
   for (const type of types) {
     coverage[type] = {complete:false, reason:'queued', requestedFrom:0, requestedTo:now};
