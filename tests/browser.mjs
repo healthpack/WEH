@@ -1,0 +1,87 @@
+// Optional browser integration check using a host-supplied Playwright runtime.
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {createRequire} from 'node:module';
+import {TYPES,EXAMPLE_PROFILE} from '../src/warera.js';
+const require=createRequire(import.meta.url);
+const {chromium}=require(process.env.WEH_PLAYWRIGHT_PATH||'playwright');
+const browser=await chromium.launch({headless:true,...(process.env.WEH_CHROME_PATH?{executablePath:process.env.WEH_CHROME_PATH}:{})});
+const output=new URL('../test-results/',import.meta.url);
+await fs.mkdir(output,{recursive:true});
+const page=await browser.newPage({viewport:{width:1440,height:1050}});
+const errors=[];page.on('pageerror',e=>errors.push(e.message));
+page.on('console',e=>{if(e.type()==='error')errors.push(e.text());});
+let mode='slow',calls=0;
+const id=EXAMPLE_PROFILE.split('/').at(-1),otherId='69a46f7413e0dcf990d09341';
+const wage=(i,userId)=>({_id:`${userId}-${i}`,sellerId:userId,createdAt:new Date(Date.UTC(2025,0,1)+i*360000).toISOString()});
+await page.route('https://fonts.googleapis.com/**',route=>route.abort());
+await page.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,async route=>{
+  const request=route.request(),url=new URL(request.url()),endpoint=url.pathname.split('/').at(-1);
+  const official=url.hostname==='api2.warera.io';
+  const input=official?JSON.parse(url.searchParams.get('input'))[0]:request.postDataJSON();
+  const reply=async body=>{try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(official?[{result:{data:body}}]:{result:{data:body}})});}catch{/* request aborted by Stop */}};
+  if(request.headers()['x-api-key']==='invalid')return route.fulfill({status:401,contentType:'application/json',body:JSON.stringify([{error:{message:'Unauthorized',data:{code:'UNAUTHORIZED'}}}])});
+  if(endpoint==='user.getUserLite')return reply({username:input.userId===id?'Example explorer':'Second explorer'});
+  if(endpoint==='search.searchAnything')return reply({userIds:[id,otherId]});
+  if(input.limit===1)return reply({items:[wage(0,id)]});
+  assert.equal(endpoint,'transaction.getPaginatedTransactions');calls++;
+  if(input.transactionType!=='wage')return reply({items:[]});
+  const cursor=Number(input.cursor||0);
+  if(mode==='slow'&&cursor>0)await new Promise(resolve=>setTimeout(resolve,1000));
+  const items=Array.from({length:100},(_,i)=>wage(cursor*100+i,input.userId));
+  return reply({items,nextCursor:mode==='slow'?String(cursor+1):cursor<54?String(cursor+1):null});
+});
+try{
+  await page.goto(process.env.WEH_TEST_URL||'http://127.0.0.1:5180/');
+  await page.screenshot({path:new URL('01-key-gate.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
+  await page.getByLabel('WarEra API key').fill('invalid');
+  await page.getByRole('button',{name:'Validate & continue'}).click();
+  await page.getByRole('alert').waitFor();assert.match(await page.getByRole('alert').innerText(),/rejected this key/);
+  await page.getByLabel('WarEra API key').fill('fixture-key');
+  await page.getByRole('button',{name:'Validate & continue'}).click();
+  await page.getByLabel('Username or profile link').waitFor();
+  assert.equal(await page.getByLabel('Username or profile link').inputValue(),EXAMPLE_PROFILE);
+  await page.screenshot({path:new URL('02-profile-search.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
+  await page.getByRole('button',{name:'Start deep dive',exact:true}).click();
+  await page.waitForFunction(()=>Number(document.querySelector('[data-stat=events]')?.textContent.replaceAll(',',''))>=100);
+  assert.equal(await page.getByRole('tab').count(),3);
+  assert.deepEqual(await page.getByRole('tab').allTextContents(),['Fingerprint','Heatmap','Daily trends']);
+  await page.getByRole('button',{name:'Stop',exact:true}).click();
+  const stopped=await page.locator('[data-stat=events]').innerText(),before=calls;
+  await page.waitForTimeout(1200);
+  assert.equal(await page.locator('[data-stat=events]').innerText(),stopped);assert.equal(calls,before);
+  await page.getByRole('tab',{name:'Heatmap',exact:true}).click();await page.locator('[data-deep-view=density] svg').waitFor();
+  await page.getByRole('tab',{name:'Daily trends',exact:true}).click();await page.locator('[data-deep-view=trends] svg').waitFor();
+  await page.getByRole('button',{name:'Search new user',exact:true}).click();
+  await page.getByLabel('Username or profile link').fill('Example');
+  await page.getByRole('button',{name:'Start deep dive',exact:true}).click();
+  await page.getByRole('button',{name:/Second explorer/}).waitFor();
+  mode='complete';await page.getByRole('button',{name:/Second explorer/}).click();
+  await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5500');
+  assert.match(await page.locator('.account-name').innerText(),/Second explorer/);
+  assert.equal(await page.getByRole('button',{name:'Stop',exact:true}).isDisabled(),true);
+  for(const name of ['Fingerprint','Heatmap','Daily trends']){
+    await page.getByRole('tab',{name,exact:true}).click();
+    await page.screenshot({path:new URL(`03-${name.replaceAll(' ','-').toLowerCase()}.png`,output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
+  }
+  await page.getByRole('tab',{name:'Fingerprint',exact:true}).click();
+  await page.getByLabel('Date interval from').fill('2025-01-02');
+  await page.getByLabel('Date interval to').fill('2025-01-03');
+  await page.getByRole('button',{name:'Apply interval',exact:true}).click();
+  await page.getByRole('button',{name:'Full interval',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Full interval',exact:true}).click();
+  const canvas=page.getByRole('img',{name:'Activity fingerprint by UTC date and hour'});
+  assert.ok(await canvas.evaluate(c=>c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0)));
+  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
+  await page.screenshot({path:new URL('04-mobile.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+  await page.getByRole('tab',{name:'Heatmap',exact:true}).click();
+  await page.getByRole('tab',{name:'Daily trends',exact:true}).click();
+  await page.getByRole('button',{name:'Change API key',exact:true}).click();
+  await page.getByLabel('WarEra API key').waitFor();
+  assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),0);
+  // Simulated invalid-key responses produce expected network console errors only.
+  assert.deepEqual(errors.filter(e=>!e.includes('401')&&!e.includes('net::ERR_FAILED')),[]);
+  console.log('Browser checks passed: invalid key, profile overlay, progressive acquisition, Stop, new user, ambiguity choices, 5,500 events, three charts, date filter, mobile, and in-memory key.');
+}finally{await browser.close();}
