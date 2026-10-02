@@ -10,14 +10,14 @@ export const LABELS = { itemMarket:'Equipment market', trading:'Resource offers'
 export const TYPE_COLORS = { itemMarket:'#4fc3e8', wage:'#3fd0a3', donation:'#ff5d6c', articleTip:'#a98bff', openCase:'#ffab3d', craftItem:'#ffd84d', dismantleItem:'#ff7ab8', trading:'#79c0ff', battleLoot:'#f78166' };
 export const TYPE_HINTS = {
   itemMarket:'Only this account’s equipment listings, using listing time. Purchases and sale completion times are excluded. Transaction history reveals listings that resulted in a recorded sale.',
-  trading:'Resource transactions do not identify who placed the offer. Excluded from all charts; neither fill time nor unverified offer time is plotted.',
+  trading:'Resource transactions do not identify who placed the offer. Excluded from all charts. Owners are available only for currently open orders, not historical filled offers.',
   donation:'Only donations sent by this account, using transaction time. Received transfers are excluded from all charts.',
   articleTip:'Only article tips sent by this account, using payment time. Received tips are excluded from all charts.',
   wage:'Own work only; payments made to other workers are excluded.',
   openCase:'Cases opened by the account, using the recorded transaction time.',
   craftItem:'Crafting events, using the recorded transaction time.',
   dismantleItem:'Dismantling events, using the recorded transaction time.',
-  battleLoot:'Battle loot includes case drops on attack only.',
+  battleLoot:'Only timestamped case drops belonging to this account. Equipment awards are excluded. Battle summaries provide case totals, not individual drop times.',
 };
 
 export function profileId(input) {

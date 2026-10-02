@@ -22,6 +22,8 @@ Action-type filters do not refetch data; Shift-click selects only one type. Timi
 
 The timezone selector rebuckets dates and hours across all three graphs without changing the original timestamps. Local-day coverage uses the actual timezone boundaries, including daylight-saving transitions. Loading feedback appears immediately and remains visible while history pages are collected.
 
+Selecting Resource offers alone explains that historical listing ownership is unavailable. The public order book identifies owners of currently open orders, but cannot reconstruct filled or cancelled offers. Selecting Battle cases alone explains when the transaction history contains no timestamped case drops. The case recognizer accepts regular/elite case codes and `woodenCase`, while excluding equipment awards. `battleLootSummary.getByBattleAndUser` exposes case totals per battle (`case1Count`, `case2Count`) without a timestamp for each drop; its document creation/update timestamps are not individual attack or drop times and are not plotted. Acquisition details show raw fetched-row counts alongside accepted events so exclusions are visible.
+
 ## Development
 
 Requires Node.js 22.12 or newer.

@@ -16,7 +16,7 @@ export function actionTimeFor(tx, uid, type) {
 export function caseLoot(tx) {
   const code = tx.itemCode ?? tx.item?.code;
   // Chest armor is equipment, not a loot case. Unknown codes do not establish a case.
-  return /^case(?:[1-9]\d*)?$/i.test(String(code || '')) || (!code && tx.item?.type === 'case');
+  return /^(?:case(?:[1-9]\d*)?|woodenCase)$/i.test(String(code || '')) || (!code && tx.item?.type === 'case');
 }
 
 export function deepDiveEventFor(tx, uid, type) {

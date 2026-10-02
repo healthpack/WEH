@@ -1,12 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {actionTimeFor,deepDiveEventFor} from '../src/analysisCore.js';
+import {actionTimeFor,caseLoot,deepDiveEventFor} from '../src/analysisCore.js';
 import {collectDive} from '../src/warera.js';
 import {dailySummary,DAY} from '../src/deepDiveAnalysis.js';
 
 const id='69a46f7413e0dcf990d09340',other='69a46f7413e0dcf990d09341';
 const listing=Date.UTC(2025,0,1,9),payment=Date.UTC(2025,0,7,20);
 const base={sellerId:id,buyerId:other,offerCreatedAt:new Date(listing).toISOString(),createdAt:new Date(payment).toISOString()};
+
+test('battle cases recognize current case codes, omit equipment awards and require the selected recipient',()=>{
+  for(const itemCode of ['case1','case2','woodenCase']) {
+    const row={_id:'drop',buyerId:id,itemCode,createdAt:new Date(listing).toISOString()};
+    assert.equal(caseLoot(row),true);
+    assert.equal(deepDiveEventFor(row,id,'battleLoot').t,listing);
+    assert.equal(deepDiveEventFor({...row,buyerId:other},id,'battleLoot'),null);
+    assert.equal(deepDiveEventFor({...row,buyerId:{_id:id}},id,'battleLoot').t,listing);
+    assert.equal(deepDiveEventFor({...row,createdAt:'invalid'},id,'battleLoot'),null);
+  }
+  for(const itemCode of ['chest1','chest3','pants2','gloves5','sniper','caseUnknown',undefined])assert.equal(deepDiveEventFor({buyerId:id,itemCode,createdAt:base.createdAt},id,'battleLoot'),null);
+});
 
 test('tips and donations represent the selected sender only, including nested identities',()=>{
   for(const type of ['articleTip','donation']) {
