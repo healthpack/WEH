@@ -132,6 +132,7 @@ try{
   await page.getByRole('button',{name:'Change API key',exact:true}).click();
   assert.equal(await page.getByLabel('WarEra API key').inputValue(),'fixture-key');
   await page.getByRole('button',{name:'Validate & continue'}).click();
+  await page.getByRole('dialog').waitFor({state:'hidden'});
   assert.equal(await page.getByRole('dialog').count(),0);
   assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),0);
   // Simulated invalid-key responses produce expected network console errors only.
