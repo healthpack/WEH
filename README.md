@@ -6,7 +6,9 @@ A standalone, single-account explorer with three views: **Fingerprint**, **Heatm
 2. Paste a profile URL, enter a user ID, or search by username. The example profile is prefilled. Ambiguous names show selectable matches.
 3. Observe the charts populate as transaction pages arrive. Stop cancels queued requests, active fetches, retries, and rate-limit waits; already fetched observations remain visible. Search new user stops the current collection and opens the search overlay.
 
-The key stays in page memory, is never placed in a URL or persisted, and is sent only in the `X-API-Key` header to the official API and WarEraStats gateway. Reloading requires entering it again. This is a static app with no backend, shared cache, Redis dependency, or Oracle runtime dependency.
+The validated key is saved in this browser's local storage and revalidated on reopening or refreshing the page. A rejected replacement never overwrites the previous working key. It is never placed in a URL and is sent only in the `X-API-Key` header to the official API and WarEraStats gateway. If browser storage is unavailable, the key works for the current visit and the app reports that it could not be saved. This is a static app with no backend, shared cache, Redis dependency, or Oracle runtime dependency.
+
+Account scans have shareable paths, for example `https://healthpack.github.io/WEH/69a46f7413e0dcf990d09340`. Opening an account link validates the remembered key and starts that account's scan automatically. Without a key, it requests one first and starts the queued account after validation. Browser Back and Forward also load the account in the path. The build includes the app shell as `404.html` so GitHub Pages can serve arbitrary account links directly; the shell retains the requested URL (the initial document has HTTP 404 status on Pages).
 
 ## History and transport
 
@@ -14,7 +16,7 @@ Nine action types use the extracted Oracle request scheduler, gateway-first tran
 
 Each type walks cursors to exhaustion, with **no lookback, transaction, or page cap**. Timestamps and known rows never prematurely end pagination. Repeated cursors, malformed pages, and failures are recorded as incomplete acquisition. Browser memory and the histories actually exposed by the upstream services determine the available data.
 
-Coverage is kept separate from observations. Wages include own work only. Equipment sellers use listing time and buyers use purchase time. Received donations/tips and resource-offer timestamps have explicit uncertainty; resource offers and received transfers are excluded from the heatmap. Battle loot includes case drops only. Hatched regions indicate incomplete acquisition, and 7-day means are withheld until contributing days are verified.
+Coverage is kept separate from observations. Wages include own work only. Equipment sellers use listing time and buyers use purchase time. Received donations/tips and resource-offer timestamps have explicit uncertainty; resource offers and received transfers are excluded from the heatmap. Battle loot includes case drops only. Incomplete acquisition is shown in status, acquisition details, and chart tooltips; charts have no hatch pattern. The 7-day means are withheld until contributing days are verified.
 
 Action-type filters do not refetch data; Shift-click selects only one type. Timing details are available by hovering over the filter buttons. Monochrome mode uses a single cyan color, while Color by type uses consistent action colors for fingerprint points, heatmap cell segments, and daily trend lines. Fingerprint supports wheel zoom, shift-wheel hour zoom, and drag panning.
 

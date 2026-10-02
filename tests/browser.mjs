@@ -3,23 +3,30 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {TYPES,EXAMPLE_PROFILE} from '../src/warera.js';
+import {KEY_STORAGE_NAME} from '../src/browserSession.js';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.WEH_PLAYWRIGHT_PATH||'playwright');
 const browser=await chromium.launch({headless:true,...(process.env.WEH_CHROME_PATH?{executablePath:process.env.WEH_CHROME_PATH}:{})});
 const output=new URL('../test-results/',import.meta.url);
 await fs.mkdir(output,{recursive:true});
-const page=await browser.newPage({viewport:{width:1440,height:1050}});
-const errors=[];page.on('pageerror',e=>errors.push(e.message));
-page.on('console',e=>{if(e.type()==='error')errors.push(e.text());});
-let mode='slow',calls=0;
+const context=await browser.newContext({viewport:{width:1440,height:1050}});
+const errors=[];
+context.on('page',page=>{
+  page.on('pageerror',e=>errors.push(e.message));
+  page.on('console',e=>{if(e.type()==='error')errors.push(e.text());});
+});
+const page=await context.newPage();
+const baseURL=process.env.WEH_TEST_URL||'http://127.0.0.1:5180/';
+let mode='slow',calls=0,validations=0;
 const id=EXAMPLE_PROFILE.split('/').at(-1),otherId='69a46f7413e0dcf990d09341';
 const wage=(i,userId)=>({_id:`${userId}-${i}`,sellerId:userId,createdAt:new Date(Date.UTC(2025,0,1)+i*360000).toISOString()});
-await page.route('https://fonts.googleapis.com/**',route=>route.abort());
-await page.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,async route=>{
+await context.route('https://fonts.googleapis.com/**',route=>route.abort());
+await context.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,async route=>{
   const request=route.request(),url=new URL(request.url()),endpoint=url.pathname.split('/').at(-1);
   const official=url.hostname==='api2.warera.io';
   const input=official?JSON.parse(url.searchParams.get('input'))[0]:request.postDataJSON();
   const reply=async body=>{try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(official?[{result:{data:body}}]:{result:{data:body}})});}catch{/* request aborted by Stop */}};
+  if(input.limit===1)validations++;
   if(request.headers()['x-api-key']==='invalid')return route.fulfill({status:401,contentType:'application/json',body:JSON.stringify([{error:{message:'Unauthorized',data:{code:'UNAUTHORIZED'}}}])});
   if(endpoint==='user.getUserLite')return reply({username:input.userId===id?'Example explorer':'Second explorer'});
   if(endpoint==='search.searchAnything')return reply({userIds:[id,otherId]});
@@ -34,11 +41,12 @@ await page.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,async
   return reply({items,nextCursor:mode==='slow'?String(cursor+1):cursor<54?String(cursor+1):null});
 });
 try{
-  await page.goto(process.env.WEH_TEST_URL||'http://127.0.0.1:5180/');
+  await page.goto(baseURL);
   assert.match(await page.locator('.brand').innerText(),/WAR ERA HISTORY/);
   assert.equal(await page.getByLabel('WarEra API key').getAttribute('placeholder'),'wae_768abc...');
   assert.equal(await page.getByLabel('WarEra API key').inputValue(),'');
-  assert.match(await page.locator('.key-explainer').innerText(),/settings.*blue CREATE TOKEN.*copy the key/);
+  assert.equal(await page.getByRole('heading',{level:2}).innerText(),'War Era account explorer');
+  assert.match(await page.locator('.key-explainer').innerText(),/WAR ERA settings.*blue CREATE TOKEN.*copy the key/);
   await page.screenshot({path:new URL('01-key-gate.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
   await page.getByLabel('WarEra API key').fill('invalid');
   await page.getByRole('button',{name:'Validate & continue'}).click();
@@ -60,7 +68,9 @@ try{
   await page.waitForTimeout(1200);
   assert.equal(await page.locator('[data-stat=events]').innerText(),stopped);assert.equal(calls,before);
   await page.getByRole('tab',{name:'Heatmap',exact:true}).click();await page.locator('[data-deep-view=density] svg').waitFor();
+  assert.equal(await page.locator('[data-deep-view=density] pattern').count(),0);
   await page.getByRole('tab',{name:'Daily trends',exact:true}).click();await page.locator('[data-deep-view=trends] svg').waitFor();
+  assert.equal(await page.locator('[data-deep-view=trends] pattern').count(),0);
   await page.getByRole('button',{name:'Search new user',exact:true}).click();
   await page.getByLabel('Username or profile link').fill('Example');
   await page.getByRole('button',{name:'Start deep dive',exact:true}).click();
@@ -75,7 +85,8 @@ try{
   assert.equal(await page.getByLabel('Market side').count(),0);
   assert.equal(await page.getByText('Relative to each account’s peak',{exact:true}).count(),0);
   assert.equal(await page.getByText('ONE ACCOUNT. ALL AVAILABLE HISTORY.',{exact:true}).count(),0);
-  assert.match(await page.getByRole('heading',{level:1}).innerText(),/^See the history of a War Era account over time\.$/);
+  assert.match(await page.getByRole('heading',{level:1}).innerText(),/^View the actions of a War Era account over time\.$/);
+  assert.equal(page.url(),baseURL+otherId);
   assert.match(await page.getByRole('button',{name:'Equipment market',exact:true}).getAttribute('title'),/sellers use listing time and buyers use purchase time/);
   assert.match(await page.getByRole('button',{name:'Battle cases',exact:true}).getAttribute('title'),/case drops on attack only/);
   assert.doesNotMatch(await page.locator('.chart-content').innerText(),/Equipment sellers use listing time/);
@@ -134,8 +145,53 @@ try{
   await page.getByRole('button',{name:'Validate & continue'}).click();
   await page.getByRole('dialog').waitFor({state:'hidden'});
   assert.equal(await page.getByRole('dialog').count(),0);
-  assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),0);
-  // Simulated invalid-key responses produce expected network console errors only.
-  assert.deepEqual(errors.filter(e=>!e.includes('401')&&!e.includes('net::ERR_FAILED')),[]);
-  console.log('Browser checks passed: key hint/instructions, immediate loading, Stop, 5,510 events, type colors in all charts, Shift-click isolation, timezone rebucketing, removed controls/copy, mobile, previous-key retention and cancellation.');
+  assert.equal(await page.evaluate(name=>localStorage.getItem(name),KEY_STORAGE_NAME),'fixture-key');
+  assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),1);
+
+  // Refresh restores and revalidates the saved key, then scans the linked account.
+  const priorValidations=validations;
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
+  assert.ok(validations>priorValidations);assert.match(await page.locator('.account-name').innerText(),/Second explorer/);
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5510');
+  assert.equal(await page.getByRole('dialog').count(),0);
+
+  // Opening the site again in another tab of this browser also restores the key.
+  const reopened=await context.newPage();await reopened.goto(baseURL);
+  await reopened.getByLabel('Username or profile link').waitFor();
+  assert.equal(await reopened.getByLabel('WarEra API key').count(),0);
+  await reopened.close();
+
+  await page.goBack();
+  await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete'&&document.querySelector('.account-name')?.textContent.includes('Example explorer'));
+  assert.equal(page.url(),baseURL+id);
+  await page.goForward();
+  await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete'&&document.querySelector('.account-name')?.textContent.includes('Second explorer'));
+
+  // A first-time visitor's direct link waits for a key, then starts without a search click.
+  await page.evaluate(name=>localStorage.removeItem(name),KEY_STORAGE_NAME);
+  const beforeLinked=calls;
+  await page.goto(baseURL+id);
+  await page.getByLabel('WarEra API key').waitFor();
+  assert.equal(calls,beforeLinked);
+  await page.getByLabel('WarEra API key').fill('fixture-key');
+  await page.getByRole('button',{name:'Validate & continue'}).click();
+  await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
+  assert.match(await page.locator('.account-name').innerText(),/Example explorer/);
+  assert.equal(await page.getByRole('dialog').count(),0);
+
+  // An expired saved key blocks the queued scan and can be replaced in place.
+  await page.evaluate(name=>localStorage.setItem(name,'invalid'),KEY_STORAGE_NAME);
+  const beforeExpired=calls;
+  await page.reload();
+  await page.getByRole('alert').waitFor();
+  assert.match(await page.getByRole('alert').innerText(),/saved key could not be verified/);
+  assert.equal(calls,beforeExpired);
+  await page.getByLabel('WarEra API key').fill('fixture-key');
+  await page.getByRole('button',{name:'Validate & continue'}).click();
+  await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
+  assert.equal(await page.evaluate(name=>localStorage.getItem(name),KEY_STORAGE_NAME),'fixture-key');
+  // Expected network errors: mocked invalid keys, blocked fonts, Pages' route shell.
+  assert.deepEqual(errors.filter(e=>!e.includes('401')&&!e.includes('404')&&!e.includes('net::ERR_FAILED')),[]);
+  console.log('Browser checks passed: copy, partial charts without hatching, loading, Stop, 5,510 events, colors, Shift-click, timezone, mobile, key retention/persistence/revalidation, direct account links, refresh, reopening, Back/Forward and expired-key recovery.');
 }finally{await browser.close();}

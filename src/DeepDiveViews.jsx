@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DAY, comparableEvent, dailySummary, rollingAverage, utcDate } from './deepDiveAnalysis.js';
 import { TYPE_COLORS, LABELS } from './warera.js';
 
@@ -19,9 +19,6 @@ function useWidth() {
 function Chart({width,height,label,children}) {
   return <svg role="img" aria-label={label} viewBox={`0 0 ${width} ${height}`} style={{display:'block',width:'100%',background:C.bg,borderRadius:6}}><title>{label}</title>{children}</svg>;
 }
-function Hatch({id}) {
-  return <defs><pattern id={id} width="7" height="7" patternUnits="userSpaceOnUse"><path d="M-1 1L1 -1M0 7L7 0M6 8L8 6" stroke={C.amber} opacity="0.32" strokeWidth="1"/></pattern></defs>;
-}
 function Frame({width,height}) {return <rect x={56} y={12} width={width-68} height={height-56} fill="none" stroke={C.line}/>;}
 function DateAxis({rows,width,height,x,timeZone}) {
   const steps=Math.min(rows.length,width<480?3:5);
@@ -36,7 +33,7 @@ function AccountLabel({s,detail}) {
 }
 
 export function DensityView({series,span,types,timeZone='UTC',colorMode='monochrome'}) {
-  const [ref,width]=useWidth(),hatch=useId().replace(/:/g,'');
+  const [ref,width]=useWidth();
   const summaries=useMemo(()=>series.map(s=>dailySummary(s,span,types.filter(t=>t!=='trading'),true,timeZone)),[series,span,types,timeZone]);
   const daysPerCell=Math.max(1,Math.ceil((summaries[0]?.length||0)/Math.max(1,Math.floor((width-68)/6))));
   const rows=summaries.map(days=>{
@@ -53,15 +50,14 @@ export function DensityView({series,span,types,timeZone='UTC',colorMode='monochr
   });
   const maximum=Math.max(1,...rows.flatMap(days=>days.flatMap(r=>r.hours))),H=350;
   return <div ref={ref} data-deep-view="density" data-timezone={timeZone}>
-    <div style={noteStyle}>{daysPerCell} calendar day(s) per column. Hatching marks incomplete acquisition.{colorMode==='color'?' Color segments show the action mix within each cell.':''}</div>
+    <div style={noteStyle}>{daysPerCell} calendar day(s) per column.{colorMode==='color'?' Color segments show the action mix within each cell.':''}</div>
     {series.map((s,i)=>{
       const days=rows[i];if(!days.length)return null;
       const x=j=>56+j*(width-68)/days.length,y=h=>H-44-h*(H-56)/24;
       return <div key={s.id}><AccountLabel s={s} detail={`${s.evts.filter(comparableEvent).length.toLocaleString()} known-time events · peak cell ${maximum}`}/>
         <Chart width={width} height={H} label={`${s.name}: observed event heatmap by date and hour in ${timeZone}`}>
-          <Hatch id={`${hatch}-${i}`}/><Frame width={width} height={H}/>
+          <Frame width={width} height={H}/>
           {days.map((day,j)=><g key={day.day}>
-            {!day.complete&&<rect x={x(j)} y={12} width={x(j+1)-x(j)} height={H-56} fill={`url(#${hatch}-${i})`}/>}
             {day.hours.map((count,h)=>{
               if(!count)return null;
               const cellWidth=Math.max(.5,x(j+1)-x(j)-.5),segments=colorMode==='color'?types.filter(type=>day.hoursByType[h][type]).map(type=>({type,count:day.hoursByType[h][type]})):[{type:'count',count}];
@@ -83,19 +79,18 @@ export function DensityView({series,span,types,timeZone='UTC',colorMode='monochr
 }
 
 export function TrendsView({series,span,types,timeZone='UTC',colorMode='monochrome'}) {
-  const [ref,width]=useWidth(),hatch=useId().replace(/:/g,'');
+  const [ref,width]=useWidth();
   const summaries=useMemo(()=>series.map(s=>dailySummary(s,span,types,false,timeZone)),[series,span,types,timeZone]);
   const maximum=Math.max(1,...summaries.flatMap(rows=>rows.map(r=>r.count))),H=350;
   return <div ref={ref} data-deep-view="trends" data-timezone={timeZone}>
-    <div style={noteStyle}>Daily observed totals and trailing 7-day mean. Hatching marks incomplete acquisition; the mean is withheld across incomplete days.</div>
+    <div style={noteStyle}>Daily observed totals and trailing 7-day mean. The mean is withheld across incomplete days.</div>
     {series.map((s,i)=>{
       const rows=summaries[i];if(!rows.length)return null;
       const x=j=>56+(j+.5)*(width-68)/rows.length,y=n=>H-44-n/maximum*(H-64);
       const line=values=>values.map((v,j)=>v==null?'':`${j===0||values[j-1]==null?'M':'L'}${x(j)},${y(v)}`).join(' ');
       return <div key={s.id}><AccountLabel s={s} detail={`${s.evts.length.toLocaleString()} observed events`}/>
         <Chart width={width} height={H} label={`${s.name}: daily observed totals and seven-day rolling mean in ${timeZone}`}>
-          <Hatch id={`${hatch}-${i}`}/><Frame width={width} height={H}/>
-          {rows.map((r,j)=>!r.complete&&<rect key={j} x={56+j*(width-68)/rows.length} y={12} width={(width-68)/rows.length} height={H-56} fill={`url(#${hatch}-${i})`}/>)}
+          <Frame width={width} height={H}/>
           {(colorMode==='color'?types:['count']).map(type=>{
             const values=rows.map(r=>type==='count'?r.count:r.byType[type]||0),col=TYPE_COLORS[type]||C.link;
             return <g key={type} data-event-type={type}><path d={line(values)} fill="none" stroke={col} strokeWidth="1" opacity=".55"/>{rows.length===1&&<circle cx={x(0)} cy={y(values[0])} r={3} fill={col}/>}<path d={line(rollingAverage(rows,type))} fill="none" stroke={col} strokeWidth="2.5"/></g>;
