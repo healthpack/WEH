@@ -7,6 +7,18 @@ import { deepDiveEventFor } from './analysisCore.js';
 export const EXAMPLE_PROFILE = 'https://app.warera.io/user/69a46f7413e0dcf990d09340';
 export const TYPES = ['itemMarket', 'trading', 'donation', 'articleTip', 'wage', 'openCase', 'craftItem', 'dismantleItem', 'battleLoot'];
 export const LABELS = { itemMarket:'Equipment market', trading:'Resource offers', donation:'Donations', articleTip:'Article tips', wage:'Work', openCase:'Open cases', craftItem:'Crafting', dismantleItem:'Dismantling', battleLoot:'Battle cases' };
+export const TYPE_COLORS = { itemMarket:'#4fc3e8', wage:'#3fd0a3', donation:'#ff5d6c', articleTip:'#a98bff', openCase:'#ffab3d', craftItem:'#ffd84d', dismantleItem:'#ff7ab8', trading:'#79c0ff', battleLoot:'#f78166' };
+export const TYPE_HINTS = {
+  itemMarket:'Equipment sellers use listing time and buyers use purchase time.',
+  trading:'Resource sells show offer time with unverified ownership. These observations are excluded from the heatmap.',
+  donation:'Outgoing donations use their transaction time. Received transfers are labeled as observations and excluded from the heatmap.',
+  articleTip:'Outgoing article tips use their transaction time. Received tips are excluded from the heatmap.',
+  wage:'Own work only; payments made to other workers are excluded.',
+  openCase:'Cases opened by the account, using the recorded transaction time.',
+  craftItem:'Crafting events, using the recorded transaction time.',
+  dismantleItem:'Dismantling events, using the recorded transaction time.',
+  battleLoot:'Battle loot includes case drops on attack only.',
+};
 
 export function profileId(input) {
   const value = input.trim();

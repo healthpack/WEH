@@ -1,8 +1,8 @@
-# WEH · WarEra Deep Dive
+# War Era History
 
 A standalone, single-account explorer with three views: **Fingerprint**, **Heatmap**, and **Daily trends**.
 
-1. Enter a WarEra API key. A protected transaction request against the official API must succeed before the explorer opens.
+1. Create a WarEra API key in settings using the blue **CREATE TOKEN** button at the bottom of the page. Enter the copied key; a protected official-API request must succeed before the explorer opens. Reopening Change API key prefills the last validated key and lets you return to your existing results.
 2. Paste a profile URL, enter a user ID, or search by username. The example profile is prefilled. Ambiguous names show selectable matches.
 3. Observe the charts populate as transaction pages arrive. Stop cancels queued requests, active fetches, retries, and rate-limit waits; already fetched observations remain visible. Search new user stops the current collection and opens the search overlay.
 
@@ -16,7 +16,9 @@ Each type walks cursors to exhaustion, with **no lookback, transaction, or page 
 
 Coverage is kept separate from observations. Wages include own work only. Equipment sellers use listing time and buyers use purchase time. Received donations/tips and resource-offer timestamps have explicit uncertainty; resource offers and received transfers are excluded from the heatmap. Battle loot includes case drops only. Hatched regions indicate incomplete acquisition, and 7-day means are withheld until contributing days are verified.
 
-Date selection filters the fingerprint and highlights the selected window in the full heatmap and trend overviews. Action-type and market-side filters do not refetch data. Fingerprint supports wheel zoom, shift-wheel hour zoom, and drag panning.
+Action-type filters do not refetch data; Shift-click selects only one type. Timing details are available by hovering over the filter buttons. Monochrome mode uses a single cyan color, while Color by type uses consistent action colors for fingerprint points, heatmap cell segments, and daily trend lines. Fingerprint supports wheel zoom, shift-wheel hour zoom, and drag panning.
+
+The timezone selector rebuckets dates and hours across all three graphs without changing the original timestamps. Local-day coverage uses the actual timezone boundaries, including daylight-saving transitions. Loading feedback appears immediately and remains visible while history pages are collected.
 
 ## Development
 

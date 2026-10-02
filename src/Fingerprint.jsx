@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { TYPE_COLORS } from './warera.js';
+import { eventCalendarTime } from './timezone.js';
 const C={bg:'#070b18',elev:'#121b35',line:'#1f2b4e',line2:'#2e3f6a',tx2:'#9fb0d4',tx3:'#5d6e96',link:'#4fc3e8',purple:'#a98bff'};
 const MONO='ui-monospace, monospace';
-const DAY_MS=86400000,SHADOW_MS=600000;
-const seriesColor=()=>C.link;
+const DAY_MS=86400000;
 const SEL={background:C.elev,border:'1px solid '+C.line,color:C.tx2,fontSize:11,borderRadius:6,padding:'5px 9px',fontFamily:'inherit'};
 const Empty=()=> <div className="empty-chart">Waiting for observed events…</div>;
 const zoomStep=span=>span/DAY_MS>30?4:span/DAY_MS>7?3:span/DAY_MS>2?2:1.4;
-export default function Fingerprint({ series, span }) {
+export default function Fingerprint({ series, span, timeZone='UTC', colorMode='monochrome' }) {
   const ref = useRef(null);
   const [canvasWidth, setCanvasWidth] = useState(0);
   useEffect(() => {
@@ -20,7 +21,6 @@ export default function Fingerprint({ series, span }) {
   const [yRange, setYRange] = useState([0, 24]);   // visible hour band, for vertical scaling
   const [yLo, yHi] = yRange;
   const panRef = useRef(null);
-  const only=null, overlaps=null;
   const view = zoom || (span ? [span.lo, span.hi] : null);
   useEffect(() => {
     const cv = ref.current; if (!cv || !view) return;
@@ -54,21 +54,12 @@ export default function Fingerprint({ series, span }) {
       const hInt = Math.floor(hh), mn = Math.round((hh - hInt) * 60);
       g.fillText(step < 1 ? `${String(hInt).padStart(2, '0')}:${String(mn).padStart(2, '0')}` : String(hInt).padStart(2, '0'), 2, y + 3);
     }
-    series.forEach((s, i) => {
-      if (only && !only.has(i)) return;
-      const col = seriesColor(s?.ci ?? i);
-      const hits = overlaps?.get(i);
-      for (const t of s.ts) {
+    series.forEach(s => {
+      for (const event of s.evts) {
+        const t = eventCalendarTime(event,timeZone);
         if (t < lo || t > hi) continue;
-        if (overlaps) {
-          // Anything with no company at this moment drops back to a flat grey, so the
-          // remaining colour IS the co-occurrence. Empty chart = they never share a moment.
-          const together = hits && hits.has(t);
-          g.fillStyle = together ? col : '#243050';
-          g.globalAlpha = together ? 0.95 : 0.5;
-        } else {
-          g.fillStyle = col; g.globalAlpha = only ? 0.8 : 0.55;
-        }
+        g.fillStyle = colorMode==='color' ? TYPE_COLORS[event.type] || C.link : C.link;
+        g.globalAlpha = 0.7;
         // x is the DAY, y is the time within it. These have to stay independent: plotting
         // the exact timestamp on x makes y a function of x inside each day, so every day
         // renders as a 00→24 diagonal ramp and the horizontal sleep bands — the whole point
@@ -89,9 +80,7 @@ export default function Fingerprint({ series, span }) {
       const lbl = dayCount <= 4 ? new Date(t).toISOString().slice(5, 16).replace('T', ' ') : new Date(t).toISOString().slice(5, 10);
       g.fillText(lbl, Math.min(w - 70, L + (k / 3) * (w - L - 60)), h - 8);
     }
-    // `overlaps` and the y-range belong here: without them the canvas only repainted when
-    // the time window changed, so toggling X-ray appeared to do nothing until you zoomed.
-  }, [series, view, only, overlaps, yLo, yHi, canvasWidth]);
+  }, [series, view, yLo, yHi, canvasWidth, timeZone, colorMode]);
   // Wheel zoom has to be a manual listener: React's onWheel is passive, so preventDefault
   // is ignored and the page scrolls instead of the chart zooming.
   useEffect(() => {
@@ -126,7 +115,7 @@ export default function Fingerprint({ series, span }) {
   return (
     <div>
       <div style={{ fontSize: 10.5, color: C.tx2, marginBottom: 9, lineHeight: 1.5 }}>
-        One dot per observed event — date across, hour of day up. Equipment sellers use listing time and buyers use purchase time. Resource sells show offer time with unverified ownership. Battle loot includes case drops on attack only. Empty bands mean no observed events, not sleep. Scroll to zoom; drag to pan.
+        One dot per observed event — date across, hour of day up, in {timeZone}. Scroll to zoom; drag to pan.
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7, fontSize: 10, color: C.tx3, fontFamily: MONO }}>
         <span>span {dayCount >= 2 ? `${dayCount.toFixed(1)} days` : `${(dayCount * 24).toFixed(1)} h`}</span>
@@ -134,8 +123,9 @@ export default function Fingerprint({ series, span }) {
         <span style={{ color: C.line2 }}>scroll = time · shift-scroll (or scroll the hour axis) = hours · drag = pan both</span>
         {(yLo > 0 || yHi < 24) && <span style={{ color: C.purple }}>hours {yLo.toFixed(1)}–{yHi.toFixed(1)}</span>}
       </div>
-      <canvas role="img" aria-label="Activity fingerprint by UTC date and hour" ref={ref} style={{ width: '100%', background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, cursor: panRef.current?.moved ? 'grabbing' : 'crosshair', touchAction: 'none' }}
+      <canvas role="img" aria-label={`Activity fingerprint by date and hour in ${timeZone}`} data-color-mode={colorMode} data-timezone={timeZone} ref={ref} style={{ width: '100%', background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, cursor: panRef.current?.moved ? 'grabbing' : 'crosshair', touchAction: 'none' }}
         onPointerDown={(e) => { panRef.current = { x: e.clientX, y: e.clientY, view, yRange, moved: false }; e.currentTarget.setPointerCapture(e.pointerId); }}
+        onPointerCancel={() => { panRef.current = null; }}
         onPointerMove={(e) => {
           const p = panRef.current; if (!p) return;
           const dx = e.clientX - p.x, dy = e.clientY - p.y;

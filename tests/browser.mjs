@@ -25,6 +25,8 @@ await page.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,async
   if(endpoint==='search.searchAnything')return reply({userIds:[id,otherId]});
   if(input.limit===1)return reply({items:[wage(0,id)]});
   assert.equal(endpoint,'transaction.getPaginatedTransactions');calls++;
+  if(mode==='slow'&&!input.cursor)await new Promise(resolve=>setTimeout(resolve,500));
+  if(input.transactionType==='craftItem')return reply({items:Array.from({length:10},(_,i)=>({...wage(i,input.userId),_id:'craft-'+i,createdAt:new Date(Date.UTC(2025,0,24,12)+i*60000).toISOString()}))});
   if(input.transactionType!=='wage')return reply({items:[]});
   const cursor=Number(input.cursor||0);
   if(mode==='slow'&&cursor>0)await new Promise(resolve=>setTimeout(resolve,1000));
@@ -33,6 +35,10 @@ await page.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,async
 });
 try{
   await page.goto(process.env.WEH_TEST_URL||'http://127.0.0.1:5180/');
+  assert.match(await page.locator('.brand').innerText(),/WAR ERA HISTORY/);
+  assert.equal(await page.getByLabel('WarEra API key').getAttribute('placeholder'),'wae_768abc...');
+  assert.equal(await page.getByLabel('WarEra API key').inputValue(),'');
+  assert.match(await page.locator('.key-explainer').innerText(),/settings.*blue CREATE TOKEN.*copy the key/);
   await page.screenshot({path:new URL('01-key-gate.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
   await page.getByLabel('WarEra API key').fill('invalid');
   await page.getByRole('button',{name:'Validate & continue'}).click();
@@ -43,7 +49,10 @@ try{
   assert.equal(await page.getByLabel('Username or profile link').inputValue(),EXAMPLE_PROFILE);
   await page.screenshot({path:new URL('02-profile-search.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
   await page.getByRole('button',{name:'Start deep dive',exact:true}).click();
-  await page.waitForFunction(()=>Number(document.querySelector('[data-stat=events]')?.textContent.replaceAll(',',''))>=100);
+  await page.getByTestId('graph-loading').waitFor();
+  assert.match(await page.getByTestId('graph-loading').innerText(),/Waiting for the first transaction pages/);
+  await page.screenshot({path:new URL('05-loading.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
+  await page.waitForFunction(()=>Number(document.querySelector('[data-stat=events]')?.textContent.replace(/\D/g,''))>=100);
   assert.equal(await page.getByRole('tab').count(),3);
   assert.deepEqual(await page.getByRole('tab').allTextContents(),['Fingerprint','Heatmap','Daily trends']);
   await page.getByRole('button',{name:'Stop',exact:true}).click();
@@ -58,21 +67,55 @@ try{
   await page.getByRole('button',{name:/Second explorer/}).waitFor();
   mode='complete';await page.getByRole('button',{name:/Second explorer/}).click();
   await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
-  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5500');
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5510');
   assert.match(await page.locator('.account-name').innerText(),/Second explorer/);
   assert.equal(await page.getByRole('button',{name:'Stop',exact:true}).isDisabled(),true);
+  assert.equal(await page.getByTestId('graph-loading').count(),0);
+  assert.equal(await page.locator('input[type=date]').count(),0);
+  assert.equal(await page.getByLabel('Market side').count(),0);
+  assert.equal(await page.getByText('Relative to each account’s peak',{exact:true}).count(),0);
+  assert.equal(await page.getByText('ONE ACCOUNT. ALL AVAILABLE HISTORY.',{exact:true}).count(),0);
+  assert.match(await page.getByRole('heading',{level:1}).innerText(),/^See the history of a War Era account over time\.$/);
+  assert.match(await page.getByRole('button',{name:'Equipment market',exact:true}).getAttribute('title'),/sellers use listing time and buyers use purchase time/);
+  assert.match(await page.getByRole('button',{name:'Battle cases',exact:true}).getAttribute('title'),/case drops on attack only/);
+  assert.doesNotMatch(await page.locator('.chart-content').innerText(),/Equipment sellers use listing time/);
+  const canvas=page.getByRole('img',{name:'Activity fingerprint by date and hour in UTC'});
+  const colors=async()=>canvas.evaluate(c=>{
+    const bytes=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let green=0,gold=0;
+    for(let i=0;i<bytes.length;i+=4){if(bytes[i+3]<100)continue;const [r,g,b]=bytes.slice(i,i+3);if(r>55&&r<72&&g>198&&g<220&&b>150&&b<180)green++;if(r>240&&g>190&&g<225&&b<95)gold++;}
+    return {green,gold};
+  });
+  assert.deepEqual(await colors(),{green:0,gold:0});
+  await page.getByRole('button',{name:'Color by type',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('canvas')?.dataset.colorMode==='color');
+  assert.ok((await colors()).green>0);assert.ok((await colors()).gold>0);
+  await page.getByRole('button',{name:'Work',exact:true}).click({modifiers:['Shift']});
+  assert.equal(await page.locator('.type-filters button[aria-pressed=true]').count(),1);
+  assert.equal(await page.locator('.type-filters button[aria-pressed=true]').innerText(),'Work');
+  assert.equal((await colors()).gold,0);assert.ok((await colors()).green>0);
+  await page.getByRole('button',{name:'All actions',exact:true}).click();
+  assert.equal(await page.locator('.type-filters button[aria-pressed=true]').count(),TYPES.length+1);
+  await page.getByRole('button',{name:'Monochrome',exact:true}).click();
+  assert.deepEqual(await colors(),{green:0,gold:0});
+  await page.getByRole('button',{name:'Color by type',exact:true}).click();
+  const beforeZone=await canvas.evaluate(c=>c.toDataURL());
+  await page.getByLabel('Timezone',{exact:true}).selectOption('America/New_York');
+  const localCanvas=page.getByRole('img',{name:'Activity fingerprint by date and hour in America/New_York'});
+  await localCanvas.waitFor();assert.notEqual(await localCanvas.evaluate(c=>c.toDataURL()),beforeZone);
+  assert.equal(await page.locator('.date-stat').innerText(),'2024-12-31');
   for(const name of ['Fingerprint','Heatmap','Daily trends']){
     await page.getByRole('tab',{name,exact:true}).click();
+    if(name!=='Fingerprint')assert.equal(await page.locator('[data-deep-view]').getAttribute('data-timezone'),'America/New_York');
+    if(name==='Heatmap'){
+      assert.ok(await page.locator('[data-deep-view=density] rect[data-event-type=wage]').count()>0);
+      assert.ok(await page.locator('[data-deep-view=density] rect[data-event-type=craftItem]').count()>0);
+      assert.match(await page.locator('[data-deep-view=density] rect[data-event-type=wage] title').first().textContent(),/2024-12-31 · 19:00 America\/New_York/);
+    }
+    if(name==='Daily trends')assert.equal(await page.locator('[data-deep-view=trends] g[data-event-type]').count(),TYPES.length);
     await page.screenshot({path:new URL(`03-${name.replaceAll(' ','-').toLowerCase()}.png`,output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
   }
   await page.getByRole('tab',{name:'Fingerprint',exact:true}).click();
-  await page.getByLabel('Date interval from').fill('2025-01-02');
-  await page.getByLabel('Date interval to').fill('2025-01-03');
-  await page.getByRole('button',{name:'Apply interval',exact:true}).click();
-  await page.getByRole('button',{name:'Full interval',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Full interval',exact:true}).click();
-  const canvas=page.getByRole('img',{name:'Activity fingerprint by UTC date and hour'});
-  assert.ok(await canvas.evaluate(c=>c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0)));
+  assert.ok(await localCanvas.evaluate(c=>c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0)));
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
   await page.screenshot({path:new URL('04-mobile.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
@@ -80,8 +123,18 @@ try{
   await page.getByRole('tab',{name:'Daily trends',exact:true}).click();
   await page.getByRole('button',{name:'Change API key',exact:true}).click();
   await page.getByLabel('WarEra API key').waitFor();
+  assert.equal(await page.getByLabel('WarEra API key').inputValue(),'fixture-key');
+  await page.getByLabel('WarEra API key').fill('invalid');
+  await page.getByRole('button',{name:'Validate & continue'}).click();
+  await page.getByRole('alert').waitFor();
+  await page.getByRole('button',{name:'Keep previous key & go back',exact:true}).click();
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'5510');
+  await page.getByRole('button',{name:'Change API key',exact:true}).click();
+  assert.equal(await page.getByLabel('WarEra API key').inputValue(),'fixture-key');
+  await page.getByRole('button',{name:'Validate & continue'}).click();
+  assert.equal(await page.getByRole('dialog').count(),0);
   assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),0);
   // Simulated invalid-key responses produce expected network console errors only.
   assert.deepEqual(errors.filter(e=>!e.includes('401')&&!e.includes('net::ERR_FAILED')),[]);
-  console.log('Browser checks passed: invalid key, profile overlay, progressive acquisition, Stop, new user, ambiguity choices, 5,500 events, three charts, date filter, mobile, and in-memory key.');
+  console.log('Browser checks passed: key hint/instructions, immediate loading, Stop, 5,510 events, type colors in all charts, Shift-click isolation, timezone rebucketing, removed controls/copy, mobile, previous-key retention and cancellation.');
 }finally{await browser.close();}
