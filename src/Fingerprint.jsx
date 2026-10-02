@@ -1,13 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TYPE_COLORS } from './warera.js';
 import { eventCalendarTime } from './timezone.js';
+import { overlapTimes } from './comparison.js';
 const C={bg:'#070b18',elev:'#121b35',line:'#1f2b4e',line2:'#2e3f6a',tx2:'#9fb0d4',tx3:'#5d6e96',link:'#4fc3e8',purple:'#a98bff'};
 const MONO='ui-monospace, monospace';
 const DAY_MS=86400000;
 const SEL={background:C.elev,border:'1px solid '+C.line,color:C.tx2,fontSize:11,borderRadius:6,padding:'5px 9px',fontFamily:'inherit'};
 const Empty=()=> <div className="empty-chart">Waiting for observed events…</div>;
 const zoomStep=span=>span/DAY_MS>30?4:span/DAY_MS>7?3:span/DAY_MS>2?2:1.4;
-export default function Fingerprint({ series, span, timeZone='UTC', colorMode='monochrome' }) {
+export default function Fingerprint({ series, span, timeZone='UTC', colorMode='monochrome', xray=false }) {
   const ref = useRef(null);
   const [canvasWidth, setCanvasWidth] = useState(0);
   useEffect(() => {
@@ -22,6 +23,7 @@ export default function Fingerprint({ series, span, timeZone='UTC', colorMode='m
   const [yLo, yHi] = yRange;
   const panRef = useRef(null);
   const view = zoom || (span ? [span.lo, span.hi] : null);
+  const overlaps=useMemo(()=>xray?overlapTimes(series):null,[series,xray]);
   useEffect(() => {
     const cv = ref.current; if (!cv || !view) return;
     const dpr = window.devicePixelRatio || 1;
@@ -58,8 +60,9 @@ export default function Fingerprint({ series, span, timeZone='UTC', colorMode='m
       for (const event of s.evts) {
         const t = eventCalendarTime(event,timeZone);
         if (t < lo || t > hi) continue;
-        g.fillStyle = colorMode==='color' ? TYPE_COLORS[event.type] || C.link : C.link;
-        g.globalAlpha = 0.7;
+        const together=!overlaps || overlaps.get(s.id)?.has(event.t);
+        g.fillStyle = together ? (colorMode==='color' ? TYPE_COLORS[event.type] || C.link : s.color || C.link) : '#243050';
+        g.globalAlpha = overlaps ? together ? .95 : .5 : .7;
         // x is the DAY, y is the time within it. These have to stay independent: plotting
         // the exact timestamp on x makes y a function of x inside each day, so every day
         // renders as a 00→24 diagonal ramp and the horizontal sleep bands — the whole point
@@ -80,7 +83,7 @@ export default function Fingerprint({ series, span, timeZone='UTC', colorMode='m
       const lbl = dayCount <= 4 ? new Date(t).toISOString().slice(5, 16).replace('T', ' ') : new Date(t).toISOString().slice(5, 10);
       g.fillText(lbl, Math.min(w - 70, L + (k / 3) * (w - L - 60)), h - 8);
     }
-  }, [series, view, yLo, yHi, canvasWidth, timeZone, colorMode]);
+  }, [series, view, yLo, yHi, canvasWidth, timeZone, colorMode, overlaps]);
   // Wheel zoom has to be a manual listener: React's onWheel is passive, so preventDefault
   // is ignored and the page scrolls instead of the chart zooming.
   useEffect(() => {
@@ -123,7 +126,7 @@ export default function Fingerprint({ series, span, timeZone='UTC', colorMode='m
         <span style={{ color: C.line2 }}>scroll = time · shift-scroll (or scroll the hour axis) = hours · drag = pan both</span>
         {(yLo > 0 || yHi < 24) && <span style={{ color: C.purple }}>hours {yLo.toFixed(1)}–{yHi.toFixed(1)}</span>}
       </div>
-      <canvas role="img" aria-label={`Activity fingerprint by date and hour in ${timeZone}`} data-color-mode={colorMode} data-timezone={timeZone} ref={ref} style={{ width: '100%', background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, cursor: panRef.current?.moved ? 'grabbing' : 'crosshair', touchAction: 'none' }}
+      <canvas role="img" aria-label={`Activity fingerprint by date and hour in ${timeZone}`} data-color-mode={colorMode} data-timezone={timeZone} data-xray={xray} ref={ref} style={{ width: '100%', background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, cursor: panRef.current?.moved ? 'grabbing' : 'crosshair', touchAction: 'none' }}
         onPointerDown={(e) => { panRef.current = { x: e.clientX, y: e.clientY, view, yRange, moved: false }; e.currentTarget.setPointerCapture(e.pointerId); }}
         onPointerCancel={() => { panRef.current = null; }}
         onPointerMove={(e) => {

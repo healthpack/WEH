@@ -29,7 +29,7 @@ function DateAxis({rows,width,height,x,timeZone}) {
   </g>;
 }
 function AccountLabel({s,detail}) {
-  return <div style={{...rowStyle,margin:'12px 0 6px'}}><span style={{width:9,height:9,background:C.link,borderRadius:2}}/>{s.name}<span style={{marginLeft:'auto'}}>{detail}</span></div>;
+  return <div style={{...rowStyle,margin:'12px 0 6px'}}><span style={{width:9,height:9,background:s.color||C.link,borderRadius:2}}/>{s.name}<span style={{marginLeft:'auto'}}>{detail}</span></div>;
 }
 
 export function DensityView({series,span,types,timeZone='UTC',colorMode='monochrome'}) {
@@ -65,7 +65,7 @@ export function DensityView({series,span,types,timeZone='UTC',colorMode='monochr
               const date=`${utcDate(day.day)}${day.days>1?' – '+utcDate(day.day+(day.days-1)*DAY):''}`;
               return <g key={h}>{segments.map(segment=>{
                 const start=offset;offset+=segment.count/count;
-                return <rect key={segment.type} data-event-type={segment.type} x={x(j)+start*cellWidth} y={y(h+1)} width={segment.count/count*cellWidth} height={(H-56)/24} fill={TYPE_COLORS[segment.type]||C.link} fillOpacity={.15+.85*count/maximum}><title>{`${date} · ${h}:00 ${timeZone} · ${segment.count} ${LABELS[segment.type]||'observed'} events${day.complete?'':' · incomplete sample'}`}</title></rect>;
+                return <rect key={segment.type} data-event-type={segment.type} x={x(j)+start*cellWidth} y={y(h+1)} width={segment.count/count*cellWidth} height={(H-56)/24} fill={TYPE_COLORS[segment.type]||s.color||C.link} fillOpacity={.15+.85*count/maximum}><title>{`${date} · ${h}:00 ${timeZone} · ${segment.count} ${LABELS[segment.type]||'observed'} events${day.complete?'':' · incomplete sample'}`}</title></rect>;
               })}</g>;
             })}
           </g>)}
@@ -92,7 +92,7 @@ export function TrendsView({series,span,types,timeZone='UTC',colorMode='monochro
         <Chart width={width} height={H} label={`${s.name}: daily observed totals and seven-day rolling mean in ${timeZone}`}>
           <Frame width={width} height={H}/>
           {(colorMode==='color'?types:['count']).map(type=>{
-            const values=rows.map(r=>type==='count'?r.count:r.byType[type]||0),col=TYPE_COLORS[type]||C.link;
+            const values=rows.map(r=>type==='count'?r.count:r.byType[type]||0),col=TYPE_COLORS[type]||s.color||C.link;
             return <g key={type} data-event-type={type}><path d={line(values)} fill="none" stroke={col} strokeWidth="1" opacity=".55"/>{rows.length===1&&<circle cx={x(0)} cy={y(values[0])} r={3} fill={col}/>}<path d={line(rollingAverage(rows,type))} fill="none" stroke={col} strokeWidth="2.5"/></g>;
           })}
           {[0,.5,1].map(f=><text key={f} x={48} y={y(f*maximum)+4} fill={C.sub} fontSize="11" textAnchor="end">{Math.round(f*maximum)}</text>)}

@@ -39,3 +39,13 @@
   .stats small{overflow-wrap:anywhere}
 }
 @media(prefers-reduced-motion:reduce){.graph-spinner{animation:none}}
+
+.account-identities{display:flex;align-items:center;gap:24px;flex-wrap:wrap;flex:1;min-width:0}
+.account-entry{display:flex;align-items:center;gap:16px;min-width:0}
+.account-filters{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:0 24px 12px}
+.account-filters button{display:flex;align-items:center;gap:7px;border:1px solid #293b57;border-radius:6px;background:#101a30;padding:7px 10px;font-size:11px;color:#8297b7;opacity:.45}
+.account-filters button[aria-pressed=true]{opacity:1;color:#d5e8f7;border-color:var(--account-color,#30516a);background:#142638}
+.account-filters button>span{width:7px;height:7px;border-radius:50%;background:var(--account-color)}
+.account-filters .xray-toggle{margin-left:auto;opacity:1}
+.account-filters .xray-toggle[aria-pressed=true]{color:#c1a8ff;border-color:#a98bff;background:#a98bff18}
+@media(max-width:650px){.account-identities{width:100%;flex-basis:100%;gap:16px}.account-entry{gap:12px}.account-filters{padding:0 14px 12px}.account-filters .xray-toggle{margin-left:0}}

@@ -17,9 +17,9 @@ context.on('page',page=>{
 });
 const page=await context.newPage();
 const baseURL=process.env.WEH_TEST_URL||'http://127.0.0.1:5180/';
-let mode='slow',calls=0,validations=0;
+let mode='slow',calls=0,validations=0,failComparison=false;
 const historyTypes=new Set();
-const id=EXAMPLE_PROFILE.split('/').at(-1),otherId='69a46f7413e0dcf990d09341';
+const id=EXAMPLE_PROFILE.split('/').at(-1),otherId='69a46f7413e0dcf990d09341',compareId='6a358233335ec368d750e704';
 const wage=(i,userId)=>({_id:`${userId}-${i}`,sellerId:userId,createdAt:new Date(Date.UTC(2025,0,1)+i*360000).toISOString()});
 await context.route('https://fonts.googleapis.com/**',route=>route.abort());
 await context.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,async route=>{
@@ -29,7 +29,7 @@ await context.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,as
   const reply=async body=>{try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(official?[{result:{data:body}}]:{result:{data:body}})});}catch{/* request aborted by Stop */}};
   if(input.limit===1)validations++;
   if(request.headers()['x-api-key']==='invalid')return route.fulfill({status:401,contentType:'application/json',body:JSON.stringify([{error:{message:'Unauthorized',data:{code:'UNAUTHORIZED'}}}])});
-  if(endpoint==='user.getUserLite')return reply({username:input.userId===id?'Example explorer':'Second explorer'});
+  if(endpoint==='user.getUserLite')return reply({username:input.userId===id?'Example explorer':input.userId===compareId?'First explorer':'Second explorer'});
   if(endpoint==='search.searchAnything')return reply({userIds:[id,otherId]});
   if(input.limit===1)return reply({items:[wage(0,id)]});
   assert.equal(endpoint,'transaction.getPaginatedTransactions');calls++;
@@ -46,8 +46,12 @@ await context.route(/https:\/\/(api2\.warera\.io|gateway\.warerastats\.io)\//,as
     {_id:'purchase',sellerId:'other',buyerId:input.userId,offerCreatedAt:saleTime,createdAt:saleTime},
     {_id:'unknown-listing-time',sellerId:input.userId,buyerId:'other',createdAt:saleTime},
   ]});
-  if(input.transactionType==='craftItem')return reply({items:Array.from({length:10},(_,i)=>({...wage(i,input.userId),_id:'craft-'+i,createdAt:new Date(Date.UTC(2025,0,24,12)+i*60000).toISOString()}))});
+  if(input.transactionType==='craftItem') {
+    if(failComparison&&input.userId===compareId)return route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({error:{message:'Unsupported fixture history'}})});
+    return reply({items:Array.from({length:10},(_,i)=>({...wage(i,input.userId),_id:'craft-'+i,createdAt:new Date(Date.UTC(2025,0,input.userId===compareId?25:24,12)+i*60000).toISOString()}))});
+  }
   if(input.transactionType!=='wage')return reply({items:[]});
+  if(mode==='comparison')return reply({items:[8*60,24*60+14*60,48*60+21*60].map((minutes,i)=>({...wage(i,input.userId),createdAt:new Date(Date.UTC(2025,0,1)+(minutes+(input.userId===compareId?[4,30,120][i]:0))*60000).toISOString()}))});
   const cursor=Number(input.cursor||0);
   if(mode==='slow'&&cursor>0)await new Promise(resolve=>setTimeout(resolve,1000));
   const items=Array.from({length:100},(_,i)=>wage(cursor*100+i,input.userId));
@@ -58,6 +62,8 @@ try{
   assert.match(await page.locator('.brand').innerText(),/WAR ERA HISTORY/);
   assert.equal(await page.getByLabel('WarEra API key').getAttribute('placeholder'),'wae_768abc...');
   assert.equal(await page.getByLabel('WarEra API key').inputValue(),'');
+  assert.equal(await page.getByRole('group',{name:'Visible accounts',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'X-ray overlaps',exact:true}).count(),0);
   assert.equal(await page.getByRole('heading',{level:2}).innerText(),'War Era account explorer');
   assert.match(await page.locator('.key-explainer').innerText(),/WAR ERA settings.*blue CREATE TOKEN.*copy the key/);
   await page.screenshot({path:new URL('01-key-gate.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
@@ -94,6 +100,8 @@ try{
   assert.match(await page.locator('.account-name').innerText(),/Second explorer/);
   assert.equal(await page.getByRole('button',{name:'Stop',exact:true}).isDisabled(),true);
   assert.equal(await page.getByTestId('graph-loading').count(),0);
+  assert.equal(await page.getByRole('group',{name:'Visible accounts',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'X-ray overlaps',exact:true}).count(),0);
   assert.equal(await page.locator('input[type=date]').count(),0);
   assert.equal(await page.getByLabel('Market side').count(),0);
   assert.equal(await page.getByText('Relative to each account’s peak',{exact:true}).count(),0);
@@ -216,7 +224,100 @@ try{
   await page.getByRole('button',{name:'Validate & continue'}).click();
   await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
   assert.equal(await page.evaluate(name=>localStorage.getItem(name),KEY_STORAGE_NAME),'fixture-key');
+
+  // Two IDs remain queued behind the key gate, without a normal-page entry point.
+  mode='comparison';
+  await page.evaluate(name=>localStorage.removeItem(name),KEY_STORAGE_NAME);
+  const pairURL=baseURL+compareId+'/'+id,beforePair=calls;
+  await page.goto(pairURL);
+  await page.getByLabel('WarEra API key').waitFor();assert.equal(calls,beforePair);
+  await page.getByLabel('WarEra API key').fill('fixture-key');
+  await page.getByRole('button',{name:'Validate & continue'}).click();
+  await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
+  assert.equal(page.url(),pairURL);
+  assert.deepEqual(await page.locator('.account-name').allTextContents(),['First explorer','Example explorer']);
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'30');
+  assert.equal(await page.locator('.receipts > div').count(),14);
+  assert.match(await page.getByRole('region',{name:'Collected data'}).innerText(),/14\s*\/\s*14/);
+  const pairCanvas=page.locator('canvas');
+  const accountPixels=async()=>pairCanvas.evaluate(c=>{
+    const bytes=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let cyan=0,red=0,grey=0;
+    for(let i=0;i<bytes.length;i+=4){if(bytes[i+3]<100)continue;const [r,g,b]=bytes.slice(i,i+3);
+      if(r>72&&r<85&&g>188&&g<201&&b>222&&b<238)cyan++;
+      if(r>244&&g>85&&g<102&&b>99&&b<117)red++;
+      if(r>=34&&r<=38&&g>=45&&g<=50&&b>=76&&b<=83)grey++;
+    }return {cyan,red,grey};
+  });
+  await page.getByRole('button',{name:'Color by account',exact:true}).click();
+  let pixels=await accountPixels();assert.ok(pixels.cyan>0);assert.ok(pixels.red>0);
+  const noXray=await pairCanvas.evaluate(c=>c.toDataURL());
+  await page.getByRole('button',{name:'X-ray overlaps',exact:true}).click();
+  assert.notEqual(await pairCanvas.evaluate(c=>c.toDataURL()),noXray);
+  assert.ok((await accountPixels()).grey>pixels.grey);
+  const beforeFilters=calls;
+  await page.getByRole('button',{name:'Toggle First explorer',exact:true}).click();
+  pixels=await accountPixels();assert.equal(pixels.cyan,0);assert.equal(pixels.red,0);
+  await page.getByRole('button',{name:'X-ray overlaps',exact:true}).click();
+  pixels=await accountPixels();assert.equal(pixels.cyan,0);assert.ok(pixels.red>0);
+  await page.getByRole('button',{name:'Toggle First explorer',exact:true}).click();
+  await page.getByLabel('Timezone',{exact:true}).selectOption('America/New_York');
+  for(const name of ['Heatmap','Daily trends']) {
+    await page.getByRole('tab',{name,exact:true}).click();
+    assert.equal(await page.locator('[data-deep-view] svg').count(),2);
+    assert.equal(await page.locator('[data-deep-view]').getAttribute('data-timezone'),'America/New_York');
+    await page.getByRole('button',{name:'Toggle First explorer',exact:true}).click();
+    assert.equal(await page.locator('[data-deep-view] svg').count(),1);
+    assert.match(await page.locator('[data-deep-view] svg').getAttribute('aria-label'),/^Example explorer:/);
+    await page.getByRole('button',{name:'Toggle First explorer',exact:true}).click();
+  }
+  assert.equal(calls,beforeFilters);
+  await page.getByRole('tab',{name:'Fingerprint',exact:true}).click();
+  await page.getByRole('button',{name:'Toggle First explorer',exact:true}).click();
+  await page.getByRole('button',{name:'Toggle Example explorer',exact:true}).click();
+  assert.match(await page.locator('.chart-content').innerText(),/No accounts selected/);
+  await page.getByRole('button',{name:'All accounts',exact:true}).click();
+  await page.getByRole('button',{name:'Work',exact:true}).click({modifiers:['Shift']});
+  await page.getByRole('button',{name:'Color by type',exact:true}).click();
+  assert.equal(await page.locator('.type-filters button[aria-pressed=true]').count(),1);
+  await page.getByRole('button',{name:'All actions',exact:true}).click();
+  await page.getByRole('button',{name:'Color by account',exact:true}).click();
+  await page.getByRole('button',{name:'X-ray overlaps',exact:true}).click();
+  await page.setViewportSize({width:1440,height:1050});
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:new URL('08-comparison.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+  await page.screenshot({path:new URL('09-comparison-mobile.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1'),fullPage:true});
+
+  // Saved keys restore both accounts; one unavailable history retains the other's data.
+  failComparison=true;await page.reload();
+  await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='Partial history');
+  assert.equal(page.url(),pairURL);
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'20');
+  assert.match(await page.locator('.acquisition').innerText(),/1 failed type/);
+  await page.getByRole('tab',{name:'Heatmap',exact:true}).click();
+  assert.equal(await page.locator('[data-deep-view] svg').count(),2);
+  failComparison=false;mode='slow';await page.reload();
+  await page.getByTestId('graph-loading').waitFor();
+  await page.waitForFunction(()=>Number(document.querySelector('[data-stat=events]')?.textContent.replace(/\D/g,''))>=100);
+  await page.getByRole('button',{name:'Stop',exact:true}).click();
+  const pairStopped=await page.locator('[data-stat=events]').innerText(),stoppedCalls=calls;
+  await page.waitForTimeout(1200);
+  assert.equal(await page.locator('[data-stat=events]').innerText(),pairStopped);assert.equal(calls,stoppedCalls);
+
+  // Manual search returns to the ordinary page, and Back restores the two-ID route.
+  await page.getByRole('button',{name:'Search new user',exact:true}).click();
+  await page.getByLabel('Username or profile link').fill(id);mode='complete';
+  await page.getByRole('button',{name:'Start deep dive',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete');
+  assert.equal(page.url(),baseURL+id);
+  assert.equal(await page.getByRole('group',{name:'Visible accounts',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'X-ray overlaps',exact:true}).count(),0);
+  mode='comparison';await page.goBack();
+  await page.waitForFunction(()=>document.querySelector('.status')?.textContent==='History complete'&&document.querySelectorAll('.account-name').length===2&&document.querySelector('[data-stat=events]')?.textContent==='30');
+  assert.equal(page.url(),pairURL);assert.equal(await page.locator('.account-name').count(),2);
+  assert.equal((await page.locator('[data-stat=events]').innerText()).replace(/\D/g,''),'30');
   // Expected network errors: mocked invalid keys, blocked fonts, Pages' route shell.
-  assert.deepEqual(errors.filter(e=>!e.includes('401')&&!e.includes('404')&&!e.includes('net::ERR_FAILED')),[]);
-  console.log('Browser checks passed: 5,512 own events; unsupported controls and history requests removed, attribution, all three graphs, colors, timezone, Stop, mobile, saved keys and account links.');
+  assert.deepEqual(errors.filter(e=>!e.includes('401')&&!e.includes('404')&&!e.includes('500')&&!e.includes('net::ERR_FAILED')),[]);
+  console.log('Browser checks passed: solo and two-account links, X-ray repaint and visible-account matching, shared graph filters, partial data, Stop, mobile, saved keys, refresh and navigation.');
 }finally{await browser.close();}
